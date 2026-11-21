@@ -142,6 +142,7 @@
   var MaxEscorts = 4;
   var EscortLinger = 1.2;
   var EscortScale = 0.8;
+  var BurstSlackMs = 150;
   var AlienReachUnits = 18.1;
   var Palette = {
     Doc: "#5eead4",
@@ -337,6 +338,11 @@
     alienSeq = 0;
     /** 上一次同步時同時執行中的工具數（分流泡泡用）。 */
     parallel = 0;
+    /**
+     * 並行但「掃描到時已經完成」的快工具：仍要出動一下機甲。key＝toolUseId；
+     * owner＝所屬隊伍（''＝主 AI）、time＝呼叫開始時間（毫秒）、left＝還要出動幾秒。
+     */
+    ghosts = /* @__PURE__ */ new Map();
     ordered = [];
     sessionsList = [];
     orderSeq = 0;
@@ -442,6 +448,7 @@
       }
       let total = 0, ok = 0, fail = 0, running = 0;
       const ids = /* @__PURE__ */ new Set();
+      const newlyDone = [];
       for (const c of [...inWin].reverse()) {
         ids.add(c.toolUseId);
         let { key, name } = pillInfo(c.tool);
@@ -467,7 +474,10 @@
           const fresh = (now - c.time) / 1e3 < this.o.freshSeconds;
           if (!this.first && !this.reduceMotion && fresh) {
             this.visit(owner, p, AlienDwellStart, c.result);
-            if (done) this.pend(owner, c.result);
+            if (done) {
+              this.pend(owner, c.result);
+              newlyDone.push({ c, owner: owner?.key ?? "" });
+            }
             this.particlesList.push(new FlowParticle("in", p.key, p.color));
             if (done) this.emitOut(p, c.result);
             const doc = docName(c);
@@ -494,6 +504,7 @@
       for (const [k, v] of [...this.pills]) if (v.count === 0) this.pills.delete(k);
       for (const id of [...this.calls.keys()]) if (!ids.has(id)) this.calls.delete(id);
       this.ordered = [...this.pills.values()].sort((a, b) => (a.agent?.order ?? -1) - (b.agent?.order ?? -1) || a.order - b.order);
+      const announced = this.registerBursts(newlyDone, inWin);
       this.stats = { total, ok, fail, running };
       this.log = inWin.slice(0, 3);
       this.activeSessions = (/* @__PURE__ */ new Set([
@@ -510,7 +521,7 @@
         else if (wasLive && !this.isLive)
           this.bubbles.add("status", BubbleAnchors.Hub, `\u5DF2\u9592\u7F6E ${this.o.lingerSeconds} \u79D2\uFF0C\u958B\u59CB\u6DE1\u51FA`, Palette.Warn);
       }
-      if (!this.first && !this.reduceMotion && this.parallel < 2 && running >= 2)
+      if (!this.first && !this.reduceMotion && this.parallel < 2 && running >= 2 && !announced)
         this.bubbles.add("status", BubbleAnchors.Hub, `\u5206\u6D41 \xD7${running} \xB7 \u6A5F\u7532\u51FA\u52D5`, Palette.Agent);
       this.parallel = running;
       const hit = d.lastLimitHit;
@@ -693,15 +704,55 @@
       }
     }
     /**
+     * 並行的快工具（例如一次 Read 三個檔案）：掃描到的時候通常已經完成，只看「執行中」會派不出機甲。
+     * 這裡把「這一輪才第一次看到、已完成」的呼叫，和同一隊的其他呼叫比時間區間：有重疊（真的同時在跑）才算並行，
+     * 並行的每一筆登記成「出動中」，assignSquads 就會替它派一隻機甲短暫出動；連續的快呼叫（一個結束才開始下一個）不算。
+     * 回傳是否已經彈出「分流」泡泡（呼叫端就不再為同一批彈第二顆）。
+     */
+    registerBursts(done, all) {
+      if (done.length === 0 || this.reduceMotion) return false;
+      let announced = false;
+      const ownerOf = (c) => this.agentMap.get(agentKey(c.sessionId, c.agentId))?.key ?? "";
+      for (const owner of new Set(done.map((d) => d.owner))) {
+        const fresh = new Set(done.filter((d) => d.owner === owner).map((d) => d.c.toolUseId));
+        const pool = all.filter((c) => ownerOf(c) === owner && (fresh.has(c.toolUseId) || c.result === ToolResult.Running)).sort((a, b) => a.time - b.time);
+        let cluster = [];
+        let end = -Infinity;
+        const flush = () => {
+          const quick = cluster.filter((c) => fresh.has(c.toolUseId));
+          if (cluster.length >= 2 && quick.length > 0) {
+            for (const c of quick) if (!this.ghosts.has(c.toolUseId)) this.ghosts.set(c.toolUseId, { owner, time: c.time, left: AlienDwellStart });
+            this.bubbles.add("status", BubbleAnchors.Hub, `\u5206\u6D41 \xD7${cluster.length} \xB7 \u6A5F\u7532\u51FA\u52D5`, Palette.Agent);
+            announced = true;
+          }
+          cluster = [];
+          end = -Infinity;
+        };
+        for (const c of pool) {
+          if (cluster.length > 0 && c.time > end + BurstSlackMs) flush();
+          cluster.push(c);
+          end = Math.max(end, c.result === ToolResult.Running ? Infinity : c.time + c.durationSeconds * 1e3);
+        }
+        flush();
+      }
+      return announced;
+    }
+    /**
      * 分流：每個隊（主 AI／各子代理）每一筆「執行中」的呼叫都分配一隻機甲——隊長優先、不夠再派增援（有上限）。
      * 分配是穩定的：已經在打某筆呼叫的繼續打它，新來的呼叫才分給空手的，所以機甲不會互相換位。
      */
     assignSquads(dt) {
+      for (const [id, gh] of [...this.ghosts]) {
+        gh.left -= dt;
+        if (gh.left <= 0) this.ghosts.delete(id);
+      }
       for (const e of this.aliensMap.values()) if (e.escortIndex > 0 && !this.aliensMap.has(e.groupKey)) e.alive = false;
       for (const leader of [...this.aliensMap.values()].filter((u) => u.escortIndex === 0)) {
         const g = leader.ownerKey;
         const members = [...this.aliensMap.values()].filter((u) => u.groupKey === g).sort((a, b) => a.escortIndex - b.escortIndex);
-        const running = this.ordered.filter((p) => (p.agent?.key ?? "") === g).flatMap((p) => p.recent.filter((c) => c.result === ToolResult.Running)).sort((a, b) => b.time - a.time);
+        const real = this.ordered.filter((p) => (p.agent?.key ?? "") === g).flatMap((p) => p.recent.filter((c) => c.result === ToolResult.Running));
+        const quick = [...this.ghosts].filter(([, gh]) => gh.owner === g).map(([id, gh]) => ({ toolUseId: id, time: gh.time }));
+        const running = [...real, ...quick].sort((a, b) => b.time - a.time);
         const ids = new Set(running.map((c) => c.toolUseId));
         for (const m of members) if (m.callId !== null && !ids.has(m.callId)) m.callId = null;
         const held = new Set(members.filter((m) => m.callId !== null).map((m) => m.callId));

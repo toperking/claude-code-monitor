@@ -10,8 +10,8 @@ import { after, call, run, snap } from './helpers';
 // 與 C# 的 Tests/BubbleRagTests.cs 一一對應。
 
 const S = 'mcp__local-rag__';
-const rag = (id: string, action: string, summary: string, result: string = ToolResult.Ok, dur = 0.2) =>
-  call(id, S + action, result, 1, { summary, durationSeconds: dur });
+const rag = (id: string, action: string, summary: string, result: string = ToolResult.Ok, dur = 0.2, at = 1) =>
+  call(id, S + action, result, at, { summary, durationSeconds: dur });
 const bubblesAfter = (...calls: ReturnType<typeof rag>[]) => after(snap(2, calls)).bubbles.items;
 
 describe('辨識', () => {
@@ -158,11 +158,11 @@ describe('畫面', () => {
       return rec;
     };
 
-    // 用已完成的呼叫：3 個同時「執行中」會另外觸發「分流」泡泡，佔掉畫面最多 3 顆泡泡的名額
+    // 用已完成、而且時間不重疊的呼叫：同時在跑的呼叫（不論掃描時是否已完成）會另外觸發「分流」泡泡，佔掉畫面最多 3 顆泡泡的名額
     const withRag = after(snap(2, [
-      rag('a', 'rag_search', '怪獸機甲為什麼要加翅膀？'),
-      rag('b', 'rag_index', 'dry_run=false root=project'),
-      rag('c', 'rag_status', ''),
+      rag('a', 'rag_search', '怪獸機甲為什麼要加翅膀？', ToolResult.Ok, 0.2, 1.0),
+      rag('b', 'rag_index', 'dry_run=false root=project', ToolResult.Ok, 0.2, 1.4),
+      rag('c', 'rag_status', '', ToolResult.Ok, 0.2, 1.8),
     ]));
     run(withRag, 1.2, 2);
     expect(withRag.bubbles.items.filter(b => b.kind === 'rag')).toHaveLength(3);

@@ -2,7 +2,7 @@
   "name": "claude-code-monitor",
   "displayName": "Claude Code 本機監控",
   "description": "即時流程圖與用量彙總：只讀取本機 ~/.claude 的逐字稿，不連網、不上傳任何資料。",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "publisher": "toperking",
   "license": "MIT",
   "repository": {
@@ -13,7 +13,14 @@
   "bugs": {
     "url": "https://github.com/toperking/claude-code-monitor/issues"
   },
-  "keywords": ["claude", "claude code", "monitor", "flow", "usage", "本機監控"],
+  "keywords": [
+    "claude",
+    "claude code",
+    "monitor",
+    "flow",
+    "usage",
+    "本機監控"
+  ],
   "engines": {
     "vscode": "^1.85.0"
   },

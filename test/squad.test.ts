@@ -113,3 +113,67 @@ describe('分流：幾個工作就出動幾隻機甲', () => {
     expect(m.bubbles.items.some(b => b.text.startsWith('分流'))).toBe(false);
   });
 });
+
+// 並行的快工具：掃描到的時候已經完成（沒有「執行中」可看），時間區間重疊的才算並行。
+describe('分流：並行的快工具也要出動機甲', () => {
+  const done = (id: string, tool: string, at: number, seconds: number, extra = {}): ReturnType<typeof call> =>
+    call(id, tool, ToolResult.Ok, at, { durationSeconds: seconds, ...extra });
+  const splitBubbles = (m: FlowModel): string[] => m.bubbles.items.filter(b => b.text.startsWith('分流')).map(b => b.text);
+
+  /** 掃描一次（calls 在第 2 秒才第一次出現），回傳這段期間同時最多有幾隻機甲。 */
+  function seen(calls: ReturnType<typeof call>[], configure: (m: FlowModel) => void = () => {}): { m: FlowModel; max: number } {
+    const m = new FlowModel(Real);
+    configure(m);
+    m.sync(snap(0));
+    m.sync(snap(2, calls));
+    let max = 0;
+    for (let i = 0; i < 80; i++) { m.tick(0.05, 2000); max = Math.max(max, group(m).length); }
+    return { m, max };
+  }
+
+  it('一次 Read 三個檔案、掃描時都已成功：三隻機甲出動，彈一顆「分流 ×3」', () => {
+    const { m, max } = seen([done('a', 'Read', 1.0, 0.4), done('b', 'Read', 1.0, 0.5), done('c', 'Read', 1.05, 0.3)]);
+    expect(max).toBe(3);
+    expect(splitBubbles(m)).toEqual(['分流 ×3 · 機甲出動']);
+  });
+
+  it('連續的快呼叫（一個結束才開始下一個）不算並行：不派增援、不彈泡泡', () => {
+    const { m, max } = seen([done('a', 'Read', 1.0, 0.2), done('b', 'Read', 1.5, 0.2), done('c', 'Read', 1.9, 0.1)]);
+    expect(max).toBe(1);
+    expect(splitBubbles(m)).toEqual([]);
+  });
+
+  it('只有一個快呼叫：和以前一樣，沒有增援也沒有泡泡', () => {
+    const { m, max } = seen([done('a', 'Read', 1.0, 0.3)]);
+    expect(max).toBe(1);
+    expect(splitBubbles(m)).toEqual([]);
+  });
+
+  it('兩個快的加一個還在跑的 Bash：三隻機甲，只彈一顆泡泡', () => {
+    const { m, max } = seen([done('a', 'Read', 1.0, 0.4), done('b', 'Grep', 1.0, 0.3), call('c', 'Bash', ToolResult.Running, 1.05)]);
+    expect(max).toBe(3);
+    expect(splitBubbles(m)).toEqual(['分流 ×3 · 機甲出動']);
+  });
+
+  it('出動一下就收隊：之後只剩隊長', () => {
+    const { m } = seen([done('a', 'Read', 1.0, 0.4), done('b', 'Read', 1.0, 0.5), done('c', 'Read', 1.05, 0.3)]);
+    run(m, 14, 2);
+    expect(group(m)).toHaveLength(1);
+  });
+
+  it('子代理自己並行的快工具：派怪獸增援，主機器人不受影響', () => {
+    const m = new FlowModel(Real);
+    m.sync(snap(0));
+    m.sync(snap(2, [done('a', 'Read', 1.0, 0.4, { agentId: 'a1' }), done('b', 'Read', 1.0, 0.5, { agentId: 'a1' })], [agent()]));
+    let max = 0;
+    for (let i = 0; i < 80; i++) { m.tick(0.05, 2000); max = Math.max(max, group(m, 's1:a1').length); }
+    expect(max).toBe(2);
+    expect(group(m)).toHaveLength(1);
+  });
+
+  it('減少動態：不派增援也不彈泡泡', () => {
+    const { m, max } = seen([done('a', 'Read', 1.0, 0.4), done('b', 'Read', 1.0, 0.5)], x => { x.reduceMotion = true; });
+    expect(max).toBe(1);
+    expect(splitBubbles(m)).toEqual([]);
+  });
+});
