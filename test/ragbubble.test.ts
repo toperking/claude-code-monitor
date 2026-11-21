@@ -158,13 +158,13 @@ describe('畫面', () => {
       return rec;
     };
 
-    // 用已完成、而且時間不重疊的呼叫：同時在跑的呼叫（不論掃描時是否已完成）會另外觸發「分流」泡泡，佔掉畫面最多 3 顆泡泡的名額
-    const withRag = after(snap(2, [
-      rag('a', 'rag_search', '怪獸機甲為什麼要加翅膀？', ToolResult.Ok, 0.2, 1.0),
-      rag('b', 'rag_index', 'dry_run=false root=project', ToolResult.Ok, 0.2, 1.4),
-      rag('c', 'rag_status', '', ToolResult.Ok, 0.2, 1.8),
+    // 用已完成、而且彼此隔了一個回合以上（超過 1 秒）的呼叫：同一批並行的呼叫（不論掃描時是否已完成）會另外觸發「分流」泡泡，佔掉畫面最多 3 顆泡泡的名額
+    const withRag = after(snap(4, [
+      rag('a', 'rag_search', '怪獸機甲為什麼要加翅膀？', ToolResult.Ok, 0.2, 0.2),
+      rag('b', 'rag_index', 'dry_run=false root=project', ToolResult.Ok, 0.2, 1.6),
+      rag('c', 'rag_status', '', ToolResult.Ok, 0.2, 3.0),
     ]));
-    run(withRag, 1.2, 2);
+    run(withRag, 1.2, 4);
     expect(withRag.bubbles.items.filter(b => b.kind === 'rag')).toHaveLength(3);
 
     const rec = draw(withRag);

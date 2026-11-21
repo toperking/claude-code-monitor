@@ -121,13 +121,13 @@ describe('分流：並行的快工具也要出動機甲', () => {
   const splitBubbles = (m: FlowModel): string[] => m.bubbles.items.filter(b => b.text.startsWith('分流')).map(b => b.text);
 
   /** 掃描一次（calls 在第 2 秒才第一次出現），回傳這段期間同時最多有幾隻機甲。 */
-  function seen(calls: ReturnType<typeof call>[], configure: (m: FlowModel) => void = () => {}): { m: FlowModel; max: number } {
+  function seen(calls: ReturnType<typeof call>[], configure: (m: FlowModel) => void = () => {}, at = 2): { m: FlowModel; max: number } {
     const m = new FlowModel(Real);
     configure(m);
     m.sync(snap(0));
-    m.sync(snap(2, calls));
+    m.sync(snap(at, calls));
     let max = 0;
-    for (let i = 0; i < 80; i++) { m.tick(0.05, 2000); max = Math.max(max, group(m).length); }
+    for (let i = 0; i < 80; i++) { m.tick(0.05, at * 1000); max = Math.max(max, group(m).length); }
     return { m, max };
   }
 
@@ -137,10 +137,25 @@ describe('分流：並行的快工具也要出動機甲', () => {
     expect(splitBubbles(m)).toEqual(['分流 ×3 · 機甲出動']);
   });
 
-  it('連續的快呼叫（一個結束才開始下一個）不算並行：不派增援、不彈泡泡', () => {
-    const { m, max } = seen([done('a', 'Read', 1.0, 0.2), done('b', 'Read', 1.5, 0.2), done('c', 'Read', 1.9, 0.1)]);
+  it('不同回合的快呼叫（中間隔了模型回應的時間）不算並行：不派增援、不彈泡泡', () => {
+    const { m, max } = seen([done('a', 'Read', 0.2, 0.2), done('b', 'Read', 1.4, 0.2), done('c', 'Read', 2.6, 0.2)], undefined, 4);
     expect(max).toBe(1);
     expect(splitBubbles(m)).toEqual([]);
+  });
+
+  it('真實量到的同一回合五個工具：開始時間錯開、間隔 0.06～0.16 秒，仍是同一批「分流 ×5」，不會被切成兩批', () => {
+    // 取自逐字稿：Read、Read、Read、Glob、Grep，開始相隔 0.07／0.36／0.46／0.54 秒，各自耗時約 0.3～0.4 秒
+    const { m, max } = seen([
+      done('a', 'Read', 1.00, 0.3), done('b', 'Read', 1.07, 0.3), done('c', 'Read', 1.43, 0.3),
+      done('d', 'Glob', 1.89, 0.4), done('e', 'Grep', 2.43, 0.4),
+    ], undefined, 3);
+    expect(max).toBe(1 + MaxEscorts);
+    expect(splitBubbles(m)).toEqual(['分流 ×5 · 機甲出動']);
+  });
+
+  it('兩批之間隔了 0.9 秒：分成兩批，各彈一顆', () => {
+    const { m } = seen([done('a', 'Read', 1.0, 0.3), done('b', 'Read', 1.1, 0.3), done('c', 'Read', 2.3, 0.3), done('d', 'Read', 2.4, 0.3)], undefined, 3);
+    expect(splitBubbles(m)).toEqual(['分流 ×2 · 機甲出動', '分流 ×2 · 機甲出動']);
   });
 
   it('只有一個快呼叫：和以前一樣，沒有增援也沒有泡泡', () => {
