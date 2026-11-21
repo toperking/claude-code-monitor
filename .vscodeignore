@@ -1,0 +1,9 @@
+**
+!dist/extension.js
+!media/**
+!resources/icon.png
+!resources/activity.svg
+!package.json
+!README.md
+!LICENSE
+!CHANGELOG.md

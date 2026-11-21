@@ -1,0 +1,117 @@
+{
+  "name": "claude-code-monitor",
+  "displayName": "Claude Code 本機監控",
+  "description": "即時流程圖與用量彙總：只讀取本機 ~/.claude 的逐字稿，不連網、不上傳任何資料。",
+  "version": "0.1.0",
+  "publisher": "toperking",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/toperking/claude-code-monitor.git"
+  },
+  "homepage": "https://github.com/toperking/claude-code-monitor#readme",
+  "bugs": {
+    "url": "https://github.com/toperking/claude-code-monitor/issues"
+  },
+  "keywords": ["claude", "claude code", "monitor", "flow", "usage", "本機監控"],
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Visualization",
+    "Other"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "claudeMonitor.show",
+        "title": "Claude Monitor: 顯示側邊欄",
+        "icon": "$(pulse)"
+      },
+      {
+        "command": "claudeMonitor.open",
+        "title": "Claude Monitor: 在編輯區開啟（較大）",
+        "icon": "$(link-external)"
+      }
+    ],
+    "configuration": {
+      "title": "Claude Monitor",
+      "properties": {
+        "claudeMonitor.claudeHome": {
+          "type": "string",
+          "default": "",
+          "description": "Claude Code 資料夾。留空＝使用者目錄下的 .claude。只會讀取，不會寫入。"
+        },
+        "claudeMonitor.refreshSeconds": {
+          "type": "number",
+          "default": 2,
+          "minimum": 1,
+          "maximum": 30,
+          "description": "多久重新掃描一次逐字稿（秒）。"
+        },
+        "claudeMonitor.bubbles": {
+          "type": "boolean",
+          "default": true,
+          "description": "顯示說明泡泡（工具開始、失敗、讀寫 .md 文件、子代理出現等）。"
+        },
+        "claudeMonitor.freeIdle": {
+          "type": "boolean",
+          "default": true,
+          "description": "機器人沒事做時自己隨機活動（揮手、對空出拳、巡邏、坐下）；關閉就只依真實事件動作。"
+        },
+        "claudeMonitor.maxFps": {
+          "type": "number",
+          "default": 30,
+          "minimum": 10,
+          "maximum": 60,
+          "description": "流程圖每秒最多重畫幾張。調低可以減少 CPU／GPU 負擔；畫面完全靜止時（沒有 AI 在執行）自動降到每秒一張。"
+        }
+      }
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "claudeMonitor",
+          "title": "Claude Monitor",
+          "icon": "resources/activity.svg"
+        }
+      ]
+    },
+    "views": {
+      "claudeMonitor": [
+        {
+          "type": "webview",
+          "id": "claudeMonitor.view",
+          "name": "本機監控"
+        }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "claudeMonitor.open",
+          "when": "view == claudeMonitor.view",
+          "group": "navigation"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "build": "node esbuild.mjs",
+    "watch": "node esbuild.mjs --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "package": "npm run typecheck && npm run build && vsce package --no-dependencies",
+    "harness": "node test/serve.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^3.0.0",
+    "esbuild": "^0.25.0",
+    "typescript": "^5.6.0",
+    "vitest": "^3.0.0"
+  },
+  "icon": "resources/icon.png"
+}

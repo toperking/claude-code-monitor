@@ -1,0 +1,97 @@
+<!doctype html>
+<!-- 開發用測試頁：不用開 VS Code，直接在瀏覽器看 Webview 的畫面。用法：npm run harness，再開 http://localhost:5173/test/harness.html
+     它會用假資料演一段流程：AI 開始 → Bash 執行 → 成功 → 子代理與 Grep → 失敗 → 閒置。 -->
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="../media/webview.css">
+<title>Claude 本機監控（測試頁）</title>
+</head>
+<body>
+<div id="app">
+  <section id="usage" class="usage"></section>
+  <div id="notice" class="notice" hidden></div>
+  <div id="stage" class="stage"><canvas id="flow"></canvas></div>
+  <footer>
+    <span class="hint">測試頁：假資料。點工具方塊展開；滾輪縮放；拖曳平移；雙擊還原。</span>
+    <label><input type="checkbox" id="bubbles" checked> 說明泡泡</label>
+  </footer>
+  <div id="status"></div>
+</div>
+<script src="../media/webview.js"></script>
+<script>
+  const params = new URLSearchParams(location.search);
+  const speed = Number(params.get('speed') || 1);
+  const t0 = Date.now();
+  const SID = '11111111-aaaa-bbbb-cccc-000000000001';
+  const usage = [
+    { label: '近 5 小時', totalTokens: 1234567, cacheHitRate: 0.97, models: [{ model: 'Sonnet', tokens: 1, percent: 82 }, { model: 'Haiku', tokens: 1, percent: 17.6 }, { model: 'Opus', tokens: 1, percent: 0.4 }] },
+    { label: '近 7 天', totalTokens: 98765432, cacheHitRate: 0.95, models: [{ model: 'Sonnet', tokens: 1, percent: 90 }, { model: 'Opus', tokens: 1, percent: 10 }] },
+  ];
+  // 劇本：[開始秒數, 動作]
+  const calls = [];
+  const agents = [];
+  let sessionStatus = '回應中', lastActivity = t0;
+  const call = (id, tool, summary, result, agentId = '') => ({ toolUseId: id, sessionId: SID, time: Date.now(), tool, summary, result, durationSeconds: 0, agentId });
+  const script = [
+    [2, () => calls.unshift(call('t1', 'Bash', 'dotnet build', '執行中'))],
+    [5, () => { const c = calls.find(x => x.toolUseId === 't1'); c.result = '成功'; c.durationSeconds = 3.1; }],
+    [6.5, () => calls.unshift(call('t2', 'Read', 'd:\\Desktop\\AI相關\\ClaudeCodeMonitor\\docs\\FLOW_REDESIGN.md', '成功'))],
+    [8, () => { calls.unshift(call('t3', 'Task', 'search code', '執行中')); agents.push({ sessionId: SID, agentId: 'a1b2c3d4', model: 'claude-sonnet-5-5', status: '執行工具中', lastActivity: Date.now(), parentToolUseId: 't3', parentAgentId: '' }); }],
+    [9, () => calls.unshift(call('t4', 'Grep', 'pattern=ufo', '執行中', 'a1b2c3d4'))],
+    [12, () => { const c = calls.find(x => x.toolUseId === 't4'); c.result = '失敗'; c.durationSeconds = 2.4; }],
+    [14, () => { const c = calls.find(x => x.toolUseId === 't3'); c.result = '成功'; calls.unshift(call('t5', 'mcp__windows-mcp__Click', 'x=10', '成功')); }],
+    [16, () => { agents[0].status = '已結束'; }],
+  ];
+  const fired = new Set();
+  // 定格場景（?scene=...）：不跑劇本，固定在某個狀態，方便看外形。attack＝子代理對 Grep 持續出拳；idle＝子代理待命；
+  const scene = params.get("scene");
+  function sceneSnapshot() {
+    const now = Date.now();
+    if (scene === "loop") { // 循環：每 14 秒一輪，執行 3 秒，之後成功（偶數輪）或失敗（奇數輪），再休息；用來看機甲飛到 Output 處理
+      const el = now - t0, cycle = Math.floor(el / 14000), phase = el % 14000;
+      const res = phase < 3000 ? "執行中" : (cycle % 2 === 0 ? "成功" : "失敗");
+      const c = { toolUseId: "L" + cycle, sessionId: SID, time: now - Math.min(phase, 3000), tool: "Bash", summary: "cycle " + cycle, result: res, durationSeconds: 3, agentId: "" };
+      document.title = "loop cycle " + cycle + " phase " + (phase / 1000).toFixed(1) + "s " + res;
+      return { at: now, claudeHome: "C:\Users\me\.claude", claudeHomeFound: true, usageWindows: usage, lastLimitHit: null, agents: [], recentToolCalls: [c],
+        sessions: [{ sessionId: SID, model: "claude-sonnet-5-5", status: "執行工具中", lastActivity: now }] };
+    }
+    const base = { at: now, claudeHome: "C:\Users\me\.claude", claudeHomeFound: true, usageWindows: usage, lastLimitHit: null };
+    const ag = [{ sessionId: SID, agentId: "a1b2c3d4", model: "claude-sonnet-5-5", status: "執行工具中", lastActivity: now, parentToolUseId: "t3", parentAgentId: "" }];
+    const mk = (id, tool, summary, result, agentId = "") => ({ toolUseId: id, sessionId: SID, time: now, tool, summary, result, durationSeconds: 0, agentId });
+    const running = scene === "attack" ? [mk("t3", "Task", "search code", "執行中"), mk("t4", "Grep", "pattern=ufo", "執行中", "a1b2c3d4")] : [mk("t3", "Task", "search code", "執行中")];
+    return { ...base, sessions: [{ sessionId: SID, model: "claude-sonnet-5-5", status: "執行工具中", lastActivity: now }], recentToolCalls: running, agents: ag };
+  }
+  function snapshot() {
+    if (scene) return sceneSnapshot();
+    const s = (Date.now() - t0) / 1000 * speed;
+    script.forEach(([at, fn], i) => { if (s >= at && !fired.has(i)) { fired.add(i); fn(); lastActivity = Date.now(); } });
+    const idle = s > 20;                                   // 20 秒後 AI 停下來 → 先坐下，再依序淡出
+    const now = Date.now();
+    return {
+      at: now, claudeHome: 'C:\\Users\\me\\.claude', claudeHomeFound: true,
+      sessions: [{ sessionId: SID, model: 'claude-sonnet-5-5', status: idle ? '閒置' : (calls.some(c => c.result === '執行中') ? '執行工具中' : '回應中'), lastActivity: idle ? t0 + 19000 / speed : now }],
+      recentToolCalls: calls.map(c => ({ ...c })), agents: agents.map(a => ({ ...a })), usageWindows: usage, lastLimitHit: null,
+    };
+  }
+  window.applySnapshot(snapshot());
+  setInterval(() => window.applySnapshot(snapshot()), 2000);
+  // ?focus=monster|main&k=4：鏡頭持續對準子代理（怪獸機甲）或主機器人並放大
+  const focus = params.get("focus"), zoomK = Number(params.get("k") || 4);
+  if (focus) setInterval(() => {
+    const u = window.flowModel.aliens.find(a => focus === "monster" ? a.ownerKey !== "" : a.ownerKey === "");
+    if (u) window.flowRenderer.focus(u.x, u.y, zoomK);
+  }, 100);
+  // 測量：?fps=60 不限制 / ?fps=30 預設；畫面每秒更新一次實際張數與每張耗時（顯示在下方狀態列最前面）
+  const fps = Number(params.get('fps') || 30);
+  window.postMessage({ type: 'config', maxFps: fps, bubbles: true, freeIdle: true }, '*');
+  let prev = { frames: 0, ms: 0 };
+  setInterval(() => {
+    const s = window.renderStats; if (!s) return;
+    const df = s.frames - prev.frames, dm = s.ms - prev.ms; prev = { frames: s.frames, ms: s.ms };
+    document.title = 'fps=' + fps + ' 實際 ' + df + ' 張/秒, 每張 ' + (df ? (dm / df).toFixed(2) : '-') + ' ms';
+    document.getElementById('status').textContent = document.title;
+  }, 1000);
+</script>
+</body>
+</html>
