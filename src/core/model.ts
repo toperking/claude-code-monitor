@@ -5,6 +5,7 @@
 //（機器人的「自由活動」是使用者明確放寬的隨機裝飾，不代表任何事件；可用 freeIdle 關掉。）
 
 import { BubbleAnchors, BubbleQueue } from './bubbles';
+import { AiProvider, providerSnapshot } from './providerSnapshot';
 import { isRagWrite, ragActionOf } from './ragTools';
 import {
   AgentDto, LimitHitDto, MonitorSnapshot, SessionDto, ToolCallDto, ToolResult, isActive,
@@ -217,6 +218,7 @@ export function outAim(fail: boolean, slot: number): Pt {
 export interface FlowStats { total: number; ok: number; fail: number; running: number }
 
 export interface FlowOptions {
+  provider?: AiProvider;
   /** 統計窗口（分鐘）。 */
   windowMinutes: number;
   /** 最後一次活動後先維持多久（秒）才開始淡出。 */
@@ -305,6 +307,7 @@ export class FlowModel {
   }
 
   get windowMinutes(): number { return this.o.windowMinutes; }
+  get providerLabel(): string { return this.o.provider ?? 'AI'; }
   get freeIdle(): boolean { return this.o.freeIdle; }
   set freeIdle(v: boolean) { this.o.freeIdle = v; }
   get pillList(): readonly FlowPill[] { return this.ordered; }
@@ -330,6 +333,7 @@ export class FlowModel {
 
   // ── 資料同步 ───────────────────────────────────────────────────────────
   sync(d: MonitorSnapshot): void {
+    if (this.o.provider) d = providerSnapshot(d, this.o.provider);
     const now = d.at;
     const windowMs = this.o.windowMinutes * 60_000;
     const inWin = d.recentToolCalls.filter(c => c.result === ToolResult.Running || now - c.time < windowMs);

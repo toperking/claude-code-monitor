@@ -1,8 +1,8 @@
 {
   "name": "claude-code-monitor",
   "displayName": "Claude Code / Codex 本機監控",
-  "description": "Claude Code 與 Codex 即時流程圖、工具狀態及 Claude 用量彙總：唯讀本機逐字稿，不連網、不上傳。",
-  "version": "0.3.0",
+  "description": "Claude Code 與 Codex 共用桌布、各自獨立節點與機甲：唯讀本機逐字稿，不連網、不上傳。",
+  "version": "0.4.0",
   "publisher": "toperking",
   "license": "MIT",
   "repository": {
@@ -65,7 +65,7 @@
         "claudeMonitor.codexEnabled": {
           "type": "boolean",
           "default": true,
-          "description": "同時監看本機 Codex 任務與工具狀態（唯讀；用量統計仍僅含 Claude）。"
+          "description": "同時監看本機 Codex 任務與工具狀態（唯讀），在同一張桌布上依來源分列。"
         },
         "claudeMonitor.codexHome": {
           "type": "string",

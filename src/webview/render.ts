@@ -3,6 +3,7 @@
 // 發光用「多層半透明線條」疊出來，不用 shadowBlur（避免每幀大量模糊運算）。
 
 import { BubbleAnchors, BubbleQueue } from '../core/bubbles';
+import { FlowSceneRow, flowSceneRows } from '../core/flowSceneLayout';
 import {
   FlowAlien, FlowModel, FlowPill, Layout, Palette, Pt, cubic, formatModel, hhmmss, num1, pillInfo,
   routeIn, routeOut, routeRejected, route,
@@ -86,6 +87,8 @@ export class FlowRenderer {
   private ms = 0;
   private hoverKey: string | null = null;
   model: FlowModel | null = null;
+  private rows: FlowSceneRow[] = [];
+  private hoverPill: FlowPill | null = null;
 
   // 拖曳
   private dragging = false;
@@ -113,7 +116,8 @@ export class FlowRenderer {
         return;
       }
       const wp = this.toWorld(e.offsetX, e.offsetY);
-      const hit = this.model?.hitPill(wp.x, wp.y) ?? null; // 沒按著時：游標在方塊上 → 手指游標與高亮
+      const hit = this.hitScene(wp);
+      this.hoverPill = hit;
       this.hoverKey = hit?.key ?? null;
       canvas.style.cursor = hit ? 'pointer' : 'default';
     });
@@ -123,11 +127,11 @@ export class FlowRenderer {
       canvas.releasePointerCapture(e.pointerId);
       if (this.dragMoved <= ClickSlop) { // 移動不超過 4px 才算點擊（展開／收起）；超過就是平移
         const wp = this.toWorld(e.offsetX, e.offsetY);
-        const p = this.model?.hitPill(wp.x, wp.y);
+        const p = this.hitScene(wp);
         if (p) p.expanded = !p.expanded;
       }
     });
-    canvas.addEventListener('pointerleave', () => { if (!this.dragging) { this.hoverKey = null; canvas.style.cursor = 'default'; } });
+    canvas.addEventListener('pointerleave', () => { if (!this.dragging) { this.hoverKey = null; this.hoverPill = null; canvas.style.cursor = 'default'; } });
   }
 
   /** 把鏡頭對準世界座標 (wx, wy) 並放大到 k 倍（測試頁用，方便看機器人的細節）。 */
@@ -147,6 +151,44 @@ export class FlowRenderer {
 
   private toWorld(x: number, y: number): Pt {
     return { x: (x - (this.w / 2 + this.camX)) / this.fit, y: (y - (this.h / 2 + 30 + this.camY)) / this.fit };
+  }
+
+  private hitScene(point: Pt): FlowPill | null {
+    if (this.rows.length === 0) return this.model?.hitPill(point.x, point.y) ?? null;
+    for (const row of this.rows) {
+      const pill = row.model.hitPill(point.x, point.y - row.y);
+      if (pill) return pill;
+    }
+    return null;
+  }
+
+  renderScene(models: readonly FlowModel[], ms: number): void {
+    this.rows = flowSceneRows(models);
+    this.ms = ms;
+    const c = this.ctx;
+    c.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+    c.globalAlpha = 1;
+    c.fillStyle = '#0b0d10'; c.fillRect(0, 0, this.w, this.h);
+    if (this.w < 10 || this.h < 10 || this.rows.length === 0) return;
+    this.drawGrid();
+    const height = this.rows.reduce((sum, row) => sum + row.height, 0);
+    this.fit = Math.min(1.35, Math.max(0.1, Math.min(this.w / 1400, (this.h - 100) / height))) * this.camK;
+    c.save();
+    c.translate(this.w / 2 + this.camX, this.h / 2 + 30 + this.camY);
+    c.scale(this.fit, this.fit);
+    for (const row of this.rows) {
+      const m = row.model;
+      c.save(); c.translate(0, row.y);
+      this.text(m.providerLabel.toUpperCase() + ' · ' + m.modelText, Layout.ChipX, -row.height / 2 + 38, 15, Palette.Text, { bold: true });
+      this.text(`執行中 ${m.stats.running} · 成功 ${m.stats.ok} · 失敗 ${m.stats.fail}`, Layout.ChipX, -row.height / 2 + 62, 12, Palette.Sub);
+      this.alpha(m.source, () => { this.drawChipEdges(m); this.drawChips(m); this.drawHub(m); });
+      this.alpha(m.sink, () => { this.drawOutputs(m); this.drawSummary(m); });
+      this.alpha(1, () => { this.drawEdges(m); this.drawPills(m); this.drawParticles(m); this.drawAliens(m); this.drawBubbles(m); });
+      c.restore();
+    }
+    c.restore();
+    this.text('◈  AI FLOW', 18, 24, 13, Palette.Text, { bold: true });
+    this.text(models.map(m => m.providerLabel).join(' · '), this.w - 18, 24, 12, Palette.Sub, { align: 'right' });
   }
 
   // ── 小工具 ───────────────────────────────────────────────────────────
@@ -264,6 +306,7 @@ export class FlowRenderer {
 
   // ── 主繪製 ───────────────────────────────────────────────────────────
   render(m: FlowModel, ms: number): void {
+    this.rows = [];
     this.model = m; this.ms = ms;
     const c = this.ctx;
     c.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
@@ -338,7 +381,7 @@ export class FlowRenderer {
       this.fillRR(Layout.ChipX, y, Layout.ChipW, Layout.ChipH, 7, rgba('#12161c'), rgba(col, active ? 0.9 : 0.35), 1.2);
       const dotR = 3.2 + (active && !m.reduceMotion ? 0.5 * Math.sin(this.ms / Breath) : 0);
       this.circle(Layout.ChipX + 12, y + Layout.ChipH / 2, dotR, rgba(active ? col : Palette.Dim));
-      this.text((s.provider === 'Codex' ? 'CODEX ' + s.sessionId.slice(6, 10) : 'CLAUDE ' + s.sessionId.slice(0, 4)).toUpperCase(), Layout.ChipX + 24, y + Layout.ChipH / 2, 11, Palette.Text, { mono: true });
+      this.text(((m.providerLabel === 'AI' ? s.provider || 'Claude' : m.providerLabel) + ' ' + (s.sessionId.startsWith('codex:') ? s.sessionId.slice(6, 10) : s.sessionId.slice(0, 4))).toUpperCase(), Layout.ChipX + 24, y + Layout.ChipH / 2, 11, Palette.Text, { mono: true });
       this.circle(Layout.ChipX + Layout.ChipW, y + Layout.ChipH / 2, 3, rgba(col));
     });
   }
@@ -350,7 +393,7 @@ export class FlowRenderer {
       const x = p.left, y = p.y - Layout.PillH / 2;
       const lv = p.runLevel;
       const runLabel = p.running > 0 && p.runSeconds > 1.2;
-      const hover = p.key === this.hoverKey;
+      const hover = this.rows.length > 0 ? p === this.hoverPill : p.key === this.hoverKey;
       this.alpha(p.intro * p.fade, () => { // 新出現時淡入；沒有 AI 時依序淡出
         const corner = Math.min(16, p.h / 2);
         const glow = 6 + 6 * lv + (m.reduceMotion ? 0 : 3 * lv * Math.sin(this.ms / Breath)) + 8 * p.flash + (hover ? 8 : 0);
@@ -415,7 +458,7 @@ export class FlowRenderer {
     this.glowCircle(x, y, Layout.HubR, Palette.Agent, 1, 26);
     this.circle(x, y, Layout.HubR, rgba('#101419'), rgba(Palette.Agent), 2.5);
     this.circle(x, y, Layout.HubR + 9 + pulse, null, rgba(Palette.Agent, 0.35), 1);
-    this.text('AI', x, y, 16, Palette.Agent, { bold: true, align: 'center' });
+    this.text(m.providerLabel.toUpperCase(), x, y, m.providerLabel === 'AI' ? 16 : 12, Palette.Agent, { bold: true, align: 'center' });
     if (m.modelText.length > 0) this.text(m.modelText, x, y + Layout.HubR + 22, 10, Palette.Sub, { mono: true, align: 'center' });
   }
 
@@ -899,7 +942,7 @@ export class FlowRenderer {
     const tiny = this.w < 260; // 更窄（窄面板）：LIVE 只剩一個小圓點、不畫菱形圖示
     let tx = 18;
     if (!tiny) tx += this.text('◈', tx, 24, 13, Palette.Agent) + 10;
-    tx += this.text('AI FLOW', tx, 24, 12, Palette.Text, { bold: true }) + 10;
+    tx += this.text(m.providerLabel.toUpperCase() + ' FLOW', tx, 24, 12, Palette.Text, { bold: true }) + 10;
     if (narrow) {
       const s = m.stats;
       const dot = m.isLive ? Palette.Ok : Palette.Warn;
@@ -914,7 +957,7 @@ export class FlowRenderer {
       this.text(line, 18, 46, 10.5, Palette.Sub, { alpha: m.sink });
       return;
     }
-    this.text('本機 Claude / Codex', tx, 24, 12, '#6b7685');
+    this.text('本機 ' + m.providerLabel, tx, 24, 12, '#6b7685');
 
     let x = this.w - 18;
     if (m.modelText.length > 0) {

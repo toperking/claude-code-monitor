@@ -2,10 +2,10 @@
 
 在 VS Code 裡同時監看 Claude Code 與 Codex 的本機任務、工具與機甲狀態：
 
-- **即時流程圖**：session → AI 主節點 → 工具方塊（MCP 依伺服器合併、子代理各自一群）→ 成功輸出／失敗。
-- **Claude 用量彙總**：近 5 小時、近 7 天的快取命中率、token 總量、模型占比（尚不含 Codex）。
+- **同一張流程桌布**：Claude、Codex 各自的 session → AI 主節點 → 工具方塊 → 成功輸出／失敗，由上往下並列，共用縮放與拖曳平移。
+- **來源獨立**：主節點、模型、機甲、工具、忙碌狀態與統計分開；同名工具不會跨來源合併。移除用量卡片與固定額度提示列，讓流程圖使用更多空間。
 - **說明泡泡**：工具開始、失敗、讀寫 `.md` 文件、子代理出現、AI 開始執行／閒置、撞到額度上限。
-- **機器人**：一台超級機器人代表「AI 現在在做什麼」——有工具在跑就飛到那個方塊旁側身出拳，成功歡呼、失敗受創，AI 停下來就坐下；沒事時自己隨機活動（可關閉）。
+- **機器人**：每個來源有自己的超級機器人——有工具在跑就飛到自己的方塊旁側身出拳，成功歡呼、失敗受創，AI 停下來就坐下；沒事時自己隨機活動（可關閉）。
 
 ## 隱私
 
@@ -21,13 +21,15 @@
 - **在編輯區開啟（較大）**：側邊欄標題列右上角的「↗」按鈕，或命令面板（`Ctrl+Shift+P`）執行 **Claude Monitor: 在編輯區開啟（較大）**。側邊欄比較窄，流程圖會縮得很小；想看清楚就用這個。
 - 想要更寬的側邊欄：把活動列的圖示拖到右側的「次要側邊欄」或下方的面板區。
 
-Codex 依本機 rollout 的任務開始／完成／中止、工具呼叫／回傳更新狀態；子代理先顯示為獨立 session。沒有新活動超過 10 分鐘視為已結束，長時間無輸出的任務可能暫時被判為結束。用量與額度卡片僅計 Claude，Codex exec 內的巢狀工具只顯示逐字稿實際提供的外層呼叫。這是本機紀錄推算，無法觀察內部思考。
+Codex 依本機 rollout 的任務開始／完成／中止、工具呼叫／回傳更新狀態；子代理先顯示為獨立 session。沒有新活動超過 10 分鐘視為已結束，長時間無輸出的任務可能暫時被判為結束。Codex exec 內的巢狀工具只顯示逐字稿實際提供的外層呼叫。這是本機紀錄推算，無法觀察內部思考。
+
+畫面可依快照中的來源名稱自動向下新增 AI 節點群；本版實際支援 Claude、Codex，其他 AI 仍需實作資料掃描器。
 
 ## 安裝
 
 從 [GitHub Releases](https://github.com/toperking/claude-code-monitor/releases) 下載 VSIX，執行 VS Code 命令「Extensions: Install from VSIX」，安裝後重新載入視窗。也可在 Open VSX 搜尋 `toperking.claude-code-monitor`。
 
-Windows 桌面版同一個 Release 附 `ClaudeMonitor-win-x64-0.3.0.zip`：解壓後執行 `ClaudeMonitor.Desktop.exe`，不需另外安裝 .NET。先關閉舊版（含通知區程式），再開新版。路徑以環境變數 `Monitor__ClaudeHome`、`Monitor__CodexHome` 覆寫，未設 Codex 路徑時採用 `CODEX_HOME` 或 `~/.codex`。桌面版也是唯讀本機紀錄，RAG 搬移需主動確認才執行。
+Windows 桌面版同一個 Release 附 `ClaudeMonitor-win-x64-0.4.0.zip`：解壓後執行 `ClaudeMonitor.Desktop.exe`，不需另外安裝 .NET。先關閉舊版（含通知區程式），再開新版。路徑以環境變數 `Monitor__ClaudeHome`、`Monitor__CodexHome` 覆寫，未設 Codex 路徑時採用 `CODEX_HOME` 或 `~/.codex`。桌面版也是唯讀本機紀錄，RAG 搬移需主動確認才執行。
 
 | 操作 | 效果 |
 | --- | --- |
@@ -78,7 +80,7 @@ Windows 桌面版同一個 Release 附 `ClaudeMonitor-win-x64-0.3.0.zip`：解�
 
 ## 限制
 
-- 「已用額度百分比」與重置時間是 Anthropic 伺服器端資料，本機逐字稿裡沒有，所以**不顯示**；只有真的撞到上限時，才會顯示「已達上限、幾點重置」。
+- 主畫面不顯示 token 用量、模型占比、快取命中率或固定額度提示列；真正撞到額度上限的事件仍可透過說明泡泡呈現。
 - 這個外掛是 WPF 版（`Desktop/`）的 TypeScript 重寫，兩邊各自維護。
 
 ## 開發

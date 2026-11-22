@@ -79,6 +79,24 @@
     }
   };
 
+  // src/core/providerSnapshot.ts
+  var source = (provider, sessionId) => sessionId.startsWith("codex:") ? "Codex" : provider?.trim() || "Claude";
+  function snapshotProviders(snapshot) {
+    return [...new Set([...snapshot.sessions, ...snapshot.recentToolCalls].map((s) => source(s.provider, s.sessionId)))];
+  }
+  function providerSnapshot(snapshot, provider) {
+    const sessions = new Map(snapshot.sessions.map((s) => [s.sessionId, source(s.provider, s.sessionId)]));
+    const sessionSource = (id) => sessions.get(id) ?? source(void 0, id);
+    return {
+      ...snapshot,
+      sessions: snapshot.sessions.filter((s) => source(s.provider, s.sessionId) === provider),
+      recentToolCalls: snapshot.recentToolCalls.filter((c) => (sessions.has(c.sessionId) ? sessionSource(c.sessionId) : source(c.provider, c.sessionId)) === provider),
+      agents: snapshot.agents.filter((a) => sessionSource(a.sessionId) === provider),
+      usageWindows: provider === "Claude" ? snapshot.usageWindows : [],
+      lastLimitHit: provider === "Claude" ? snapshot.lastLimitHit : null
+    };
+  }
+
   // src/core/ragTools.ts
   var Actions = /* @__PURE__ */ new Set(["rag_search", "rag_sources", "rag_status", "rag_tables", "rag_chunks", "rag_chunk", "rag_index", "rag_remove", "rag_prune", "rag_todo", "rag_annotate", "rag_ingest_note"]);
   function ragActionOf(tool) {
@@ -376,6 +394,9 @@
     get windowMinutes() {
       return this.o.windowMinutes;
     }
+    get providerLabel() {
+      return this.o.provider ?? "AI";
+    }
     get freeIdle() {
       return this.o.freeIdle;
     }
@@ -411,6 +432,7 @@
     }
     // ── 資料同步 ───────────────────────────────────────────────────────────
     sync(d) {
+      if (this.o.provider) d = providerSnapshot(d, this.o.provider);
       const now = d.at;
       const windowMs = this.o.windowMinutes * 6e4;
       const inWin = d.recentToolCalls.filter((c) => c.result === ToolResult.Running || now - c.time < windowMs);
@@ -1039,6 +1061,17 @@
     return `\u5B50\u4EE3\u7406 ${id.toUpperCase()} \u555F\u52D5` + (model2.length > 0 ? ` \xB7 ${model2}` : "");
   }
 
+  // src/core/flowSceneLayout.ts
+  function flowSceneRows(models2) {
+    const sizes = models2.map((model2) => ({ model: model2, height: Math.max(600, model2.columnHeight + 240) }));
+    let top = -sizes.reduce((sum, row) => sum + row.height, 0) / 2;
+    return sizes.map(({ model: model2, height }) => {
+      const row = { model: model2, height, y: top + height / 2 };
+      top += height;
+      return row;
+    });
+  }
+
   // src/webview/render.ts
   var UI = '"Segoe UI Variable", "Segoe UI", "Microsoft JhengHei UI", system-ui, sans-serif';
   var MONO = '"Cascadia Mono", Consolas, "Microsoft JhengHei UI", monospace';
@@ -1140,7 +1173,8 @@
           return;
         }
         const wp = this.toWorld(e.offsetX, e.offsetY);
-        const hit = this.model?.hitPill(wp.x, wp.y) ?? null;
+        const hit = this.hitScene(wp);
+        this.hoverPill = hit;
         this.hoverKey = hit?.key ?? null;
         canvas2.style.cursor = hit ? "pointer" : "default";
       });
@@ -1150,13 +1184,14 @@
         canvas2.releasePointerCapture(e.pointerId);
         if (this.dragMoved <= ClickSlop) {
           const wp = this.toWorld(e.offsetX, e.offsetY);
-          const p = this.model?.hitPill(wp.x, wp.y);
+          const p = this.hitScene(wp);
           if (p) p.expanded = !p.expanded;
         }
       });
       canvas2.addEventListener("pointerleave", () => {
         if (!this.dragging) {
           this.hoverKey = null;
+          this.hoverPill = null;
           canvas2.style.cursor = "default";
         }
       });
@@ -1172,6 +1207,8 @@
     ms = 0;
     hoverKey = null;
     model = null;
+    rows = [];
+    hoverPill = null;
     // 拖曳
     dragging = false;
     dragFrom = { x: 0, y: 0 };
@@ -1194,6 +1231,57 @@
     }
     toWorld(x, y) {
       return { x: (x - (this.w / 2 + this.camX)) / this.fit, y: (y - (this.h / 2 + 30 + this.camY)) / this.fit };
+    }
+    hitScene(point) {
+      if (this.rows.length === 0) return this.model?.hitPill(point.x, point.y) ?? null;
+      for (const row of this.rows) {
+        const pill = row.model.hitPill(point.x, point.y - row.y);
+        if (pill) return pill;
+      }
+      return null;
+    }
+    renderScene(models2, ms) {
+      this.rows = flowSceneRows(models2);
+      this.ms = ms;
+      const c = this.ctx;
+      c.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+      c.globalAlpha = 1;
+      c.fillStyle = "#0b0d10";
+      c.fillRect(0, 0, this.w, this.h);
+      if (this.w < 10 || this.h < 10 || this.rows.length === 0) return;
+      this.drawGrid();
+      const height = this.rows.reduce((sum, row) => sum + row.height, 0);
+      this.fit = Math.min(1.35, Math.max(0.1, Math.min(this.w / 1400, (this.h - 100) / height))) * this.camK;
+      c.save();
+      c.translate(this.w / 2 + this.camX, this.h / 2 + 30 + this.camY);
+      c.scale(this.fit, this.fit);
+      for (const row of this.rows) {
+        const m = row.model;
+        c.save();
+        c.translate(0, row.y);
+        this.text(m.providerLabel.toUpperCase() + " \xB7 " + m.modelText, Layout.ChipX, -row.height / 2 + 38, 15, Palette.Text, { bold: true });
+        this.text(`\u57F7\u884C\u4E2D ${m.stats.running} \xB7 \u6210\u529F ${m.stats.ok} \xB7 \u5931\u6557 ${m.stats.fail}`, Layout.ChipX, -row.height / 2 + 62, 12, Palette.Sub);
+        this.alpha(m.source, () => {
+          this.drawChipEdges(m);
+          this.drawChips(m);
+          this.drawHub(m);
+        });
+        this.alpha(m.sink, () => {
+          this.drawOutputs(m);
+          this.drawSummary(m);
+        });
+        this.alpha(1, () => {
+          this.drawEdges(m);
+          this.drawPills(m);
+          this.drawParticles(m);
+          this.drawAliens(m);
+          this.drawBubbles(m);
+        });
+        c.restore();
+      }
+      c.restore();
+      this.text("\u25C8  AI FLOW", 18, 24, 13, Palette.Text, { bold: true });
+      this.text(models2.map((m) => m.providerLabel).join(" \xB7 "), this.w - 18, 24, 12, Palette.Sub, { align: "right" });
     }
     // ── 小工具 ───────────────────────────────────────────────────────────
     alpha(a, draw) {
@@ -1339,6 +1427,7 @@
     }
     // ── 主繪製 ───────────────────────────────────────────────────────────
     render(m, ms) {
+      this.rows = [];
       this.model = m;
       this.ms = ms;
       const c = this.ctx;
@@ -1416,7 +1505,7 @@
         this.fillRR(Layout.ChipX, y, Layout.ChipW, Layout.ChipH, 7, rgba("#12161c"), rgba(col, active ? 0.9 : 0.35), 1.2);
         const dotR = 3.2 + (active && !m.reduceMotion ? 0.5 * Math.sin(this.ms / Breath) : 0);
         this.circle(Layout.ChipX + 12, y + Layout.ChipH / 2, dotR, rgba(active ? col : Palette.Dim));
-        this.text((s.provider === "Codex" ? "CODEX " + s.sessionId.slice(6, 10) : "CLAUDE " + s.sessionId.slice(0, 4)).toUpperCase(), Layout.ChipX + 24, y + Layout.ChipH / 2, 11, Palette.Text, { mono: true });
+        this.text(((m.providerLabel === "AI" ? s.provider || "Claude" : m.providerLabel) + " " + (s.sessionId.startsWith("codex:") ? s.sessionId.slice(6, 10) : s.sessionId.slice(0, 4))).toUpperCase(), Layout.ChipX + 24, y + Layout.ChipH / 2, 11, Palette.Text, { mono: true });
         this.circle(Layout.ChipX + Layout.ChipW, y + Layout.ChipH / 2, 3, rgba(col));
       });
     }
@@ -1427,7 +1516,7 @@
         const x = p.left, y = p.y - Layout.PillH / 2;
         const lv = p.runLevel;
         const runLabel = p.running > 0 && p.runSeconds > 1.2;
-        const hover = p.key === this.hoverKey;
+        const hover = this.rows.length > 0 ? p === this.hoverPill : p.key === this.hoverKey;
         this.alpha(p.intro * p.fade, () => {
           const corner = Math.min(16, p.h / 2);
           const glow = 6 + 6 * lv + (m.reduceMotion ? 0 : 3 * lv * Math.sin(this.ms / Breath)) + 8 * p.flash + (hover ? 8 : 0);
@@ -1486,7 +1575,7 @@
       this.glowCircle(x, y, Layout.HubR, Palette.Agent, 1, 26);
       this.circle(x, y, Layout.HubR, rgba("#101419"), rgba(Palette.Agent), 2.5);
       this.circle(x, y, Layout.HubR + 9 + pulse, null, rgba(Palette.Agent, 0.35), 1);
-      this.text("AI", x, y, 16, Palette.Agent, { bold: true, align: "center" });
+      this.text(m.providerLabel.toUpperCase(), x, y, m.providerLabel === "AI" ? 16 : 12, Palette.Agent, { bold: true, align: "center" });
       if (m.modelText.length > 0) this.text(m.modelText, x, y + Layout.HubR + 22, 10, Palette.Sub, { mono: true, align: "center" });
     }
     drawOutputs(m) {
@@ -1971,7 +2060,7 @@
       const tiny = this.w < 260;
       let tx = 18;
       if (!tiny) tx += this.text("\u25C8", tx, 24, 13, Palette.Agent) + 10;
-      tx += this.text("AI FLOW", tx, 24, 12, Palette.Text, { bold: true }) + 10;
+      tx += this.text(m.providerLabel.toUpperCase() + " FLOW", tx, 24, 12, Palette.Text, { bold: true }) + 10;
       if (narrow) {
         const s2 = m.stats;
         const dot = m.isLive ? Palette.Ok : Palette.Warn;
@@ -1985,7 +2074,7 @@
         this.text(line, 18, 46, 10.5, Palette.Sub, { alpha: m.sink });
         return;
       }
-      this.text("\u672C\u6A5F Claude / Codex", tx, 24, 12, "#6b7685");
+      this.text("\u672C\u6A5F " + m.providerLabel, tx, 24, 12, "#6b7685");
       let x = this.w - 18;
       if (m.modelText.length > 0) {
         const wd = this.measure(m.modelText, 11, true, true) + 20;
@@ -2014,60 +2103,34 @@
   // src/webview/main.ts
   var vscode = typeof acquireVsCodeApi === "function" ? acquireVsCodeApi() : null;
   var $ = (id) => document.getElementById(id);
-  var model = new FlowModel();
+  var model = new FlowModel({ provider: "Claude" });
+  var codexModel = new FlowModel({ provider: "Codex" });
+  var models = [model, codexModel];
   var canvas = $("flow");
+  var stage = $("stage");
+  canvas.setAttribute("aria-label", "AI \u5171\u540C\u684C\u5E03\uFF1A\u5404\u4F86\u6E90\u7531\u4E0A\u5F80\u4E0B\u6392\u5217");
   var renderer = new FlowRenderer(canvas);
   renderer.model = model;
   var motion = window.matchMedia("(prefers-reduced-motion: reduce)");
-  model.reduceMotion = motion.matches;
-  motion.addEventListener("change", () => {
-    model.reduceMotion = motion.matches;
+  models.forEach((m) => {
+    m.reduceMotion = motion.matches;
   });
-  var pct = (p) => p >= 1 ? `${Math.round(p)}%` : "<1%";
-  var esc = (s) => s.replace(/[&<>"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[ch]);
-  function renderUsage(windows) {
-    const html = windows.map((w) => {
-      const hasData = w.totalTokens > 0;
-      const hit = w.cacheHitRate !== null ? pct(w.cacheHitRate * 100) : "\u2014";
-      const rows = w.models.map((m) => `
-      <div class="share"><span class="name">${esc(m.model)}</span>
-        <span class="bar"><i style="width:${Math.max(2, Math.round(m.percent))}%"></i></span>
-        <span class="pct">${pct(m.percent)}</span></div>`).join("");
-      return `<div class="card">
-      <div class="card-head"><span class="label">Claude \xB7 ${esc(w.label)}</span>
-        <span class="meta">\u5FEB\u53D6\u547D\u4E2D\u7387 <b>${hit}</b> \xB7 <b>${w.totalTokens.toLocaleString("en-US")}</b> tokens</span></div>
-      ${hasData ? rows : '<div class="empty">\u9019\u6BB5\u6642\u9593\u6C92\u6709\u8CC7\u6599</div>'}
-    </div>`;
-    }).join("");
-    const key = html;
-    const el = $("usage");
-    if (el.dataset.key !== key) {
-      el.innerHTML = html;
-      el.dataset.key = key;
-    }
-  }
-  function describeLimitHit(hit, now) {
-    if (!hit) return "";
-    const kind = hit.limitType === "five_hour" ? "5 \u5C0F\u6642\u984D\u5EA6" : hit.limitType;
-    const fmt = (ms) => {
-      const d = new Date(ms);
-      const p = (n) => String(n).padStart(2, "0");
-      return `${p(d.getMonth() + 1)}/${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
-    };
-    return `\u6700\u8FD1\u4E00\u6B21\u9054\u5230${kind}\u4E0A\u9650\uFF1A${fmt(hit.hitAt)}\uFF1B\u91CD\u7F6E\u6642\u9593 ${fmt(hit.resetsAt)}${hit.resetsAt > now ? "\uFF0C\u5C1A\u672A\u91CD\u7F6E" : "\uFF0C\u5DF2\u91CD\u7F6E"}`;
-  }
+  motion.addEventListener("change", () => {
+    models.forEach((m) => {
+      m.reduceMotion = motion.matches;
+    });
+  });
   function renderStatus(s) {
     const notice = $("notice");
-    const limit = describeLimitHit(s.lastLimitHit, s.at);
     const home = !s.claudeHomeFound && !s.codexHomeFound ? `\u627E\u4E0D\u5230 .claude \u8CC7\u6599\u593E\uFF1A${s.claudeHome}` : "";
-    const text = [home, limit].filter(Boolean).join("\n");
+    const text = home;
     notice.hidden = text.length === 0;
     notice.textContent = text;
     notice.className = "notice" + (home ? " warn" : "");
     const active = s.sessions.filter((x) => isActive(x.status)).length;
     const activeAgents = s.agents.filter((a) => isActive(a.status)).length;
     const sources = [s.claudeHomeFound ? "Claude" : "", s.codexHomeFound ? "Codex" : ""].filter(Boolean).join(" + ");
-    $("status").textContent = sources ? `\u5DF2\u8B80\u53D6\u672C\u6A5F ${sources}  \xB7  \u6D3B\u8E8D ${active} / ${s.sessions.length} \u500B session  \xB7  ${activeAgents} \u500B\u6D3B\u8E8D\u5B50\u4EE3\u7406  \xB7  ${s.recentToolCalls.length} \u7B46\u5DE5\u5177\u547C\u53EB\uFF08\u7528\u91CF\u50C5 Claude\uFF09` : "\u5C1A\u672A\u627E\u5230\u672C\u6A5F\u9010\u5B57\u7A3F\u8CC7\u6599\u593E";
+    $("status").textContent = sources ? `\u5DF2\u8B80\u53D6\u672C\u6A5F ${sources}  \xB7  \u6D3B\u8E8D ${active} / ${s.sessions.length} \u500B session  \xB7  ${activeAgents} \u500B\u6D3B\u8E8D\u5B50\u4EE3\u7406  \xB7  ${s.recentToolCalls.length} \u7B46\u5DE5\u5177\u547C\u53EB` : "\u5C1A\u672A\u627E\u5230\u672C\u6A5F\u9010\u5B57\u7A3F\u8CC7\u6599\u593E";
   }
   var maxFps = 30;
   window.addEventListener("message", (ev) => {
@@ -2075,44 +2138,58 @@
     if (msg.type === "snapshot" && msg.snapshot) applySnapshot(msg.snapshot);
     else if (msg.type === "config") {
       if (typeof msg.bubbles === "boolean") {
-        model.bubbles.enabled = msg.bubbles;
+        models.forEach((m) => {
+          m.bubbles.enabled = msg.bubbles;
+        });
         $("bubbles").checked = msg.bubbles;
       }
-      if (typeof msg.freeIdle === "boolean") model.freeIdle = msg.freeIdle;
+      if (typeof msg.freeIdle === "boolean") models.forEach((m) => {
+        m.freeIdle = msg.freeIdle;
+      });
       if (typeof msg.maxFps === "number") maxFps = Math.min(60, Math.max(10, msg.maxFps));
     }
   });
   function applySnapshot(s) {
-    model.sync(s);
-    renderUsage(s.usageWindows);
+    for (const provider of snapshotProviders(s)) {
+      if (models.some((m) => m.providerLabel === provider)) continue;
+      const next = new FlowModel({ provider, freeIdle: model.freeIdle });
+      next.reduceMotion = model.reduceMotion;
+      next.bubbles.enabled = model.bubbles.enabled;
+      models.push(next);
+      Object.assign(window.flowModels, { [provider]: next });
+    }
+    models.forEach((m) => m.sync(s));
     renderStatus(s);
   }
   window.applySnapshot = applySnapshot;
   window.flowModel = model;
   window.flowRenderer = renderer;
+  Object.assign(window, { flowModels: { Claude: model, Codex: codexModel } });
   document.getElementById("settings")?.addEventListener("click", () => vscode?.postMessage({ type: "openSettings" }));
   $("bubbles").addEventListener("change", (e) => {
-    model.bubbles.enabled = e.target.checked;
+    models.forEach((m) => {
+      m.bubbles.enabled = e.target.checked;
+    });
   });
   var MaxDpr = 1.5;
-  var stage = $("stage");
   var resize = () => {
     const r = stage.getBoundingClientRect();
     renderer.resize(Math.max(1, Math.floor(r.width)), Math.max(1, Math.floor(r.height)), Math.min(MaxDpr, window.devicePixelRatio || 1));
   };
-  new ResizeObserver(resize).observe(stage);
+  var observer = new ResizeObserver(resize);
+  observer.observe(stage);
   resize();
   var renderStats = { frames: 0, ms: 0 };
   window.renderStats = renderStats;
   var lastDraw = 0;
   var frame = (ts) => {
-    const interval = model.animating ? 1e3 / maxFps : 1e3;
+    const interval = models.some((m) => m.animating) ? 1e3 / maxFps : 1e3;
     if (lastDraw === 0 || ts - lastDraw >= interval - 2) {
       const dt = lastDraw === 0 ? 0 : (ts - lastDraw) / 1e3;
       lastDraw = ts;
       const t0 = performance.now();
-      model.tick(dt, Date.now());
-      renderer.render(model, ts);
+      models.forEach((m) => m.tick(dt, Date.now()));
+      renderer.renderScene(models, ts);
       renderStats.frames++;
       renderStats.ms += performance.now() - t0;
     }
