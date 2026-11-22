@@ -15,6 +15,9 @@ describe('文字與顏色', () => {
     expect(formatModel('claude-sonnet-5-5')).toBe('SONNET 5.5');
     expect(formatModel('claude-opus-4')).toBe('OPUS 4');
     expect(formatModel(undefined)).toBe('');
+    expect(formatModel('Codex · gpt-6.1-sol')).toBe('GPT-6.1 SOL');
+    expect(formatModel('gpt-6.1-sol')).toBe('GPT-6.1 SOL');
+    expect(formatModel('Codex · gpt-6.1')).toBe('GPT-6.1');
   });
   it('相對時間', () => {
     expect([ago(10), ago(120), ago(3 * 3600), ago(3 * 86400)]).toEqual(['剛剛', '2 分鐘前', '3 小時前', '3 天前']);

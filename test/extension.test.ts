@@ -148,7 +148,7 @@ describe('擴充功能主機', () => {
     expect(h.commands.has('claudeMonitor.show')).toBe(true);
     expect(h.viewProviders.has('claudeMonitor.view')).toBe(true);
     expect(h.statusItems[0]).toMatchObject({ command: 'claudeMonitor.show', shown: true });
-    expect(h.statusItems[0].text).toContain('Claude Monitor');
+    expect(h.statusItems[0].text).toContain('Claude/codex Monitor');
   });
 
   it('開啟面板：HTML 有嚴格的 CSP、用 nonce 載入腳本、不載入任何外部網址', () => {

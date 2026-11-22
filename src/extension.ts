@@ -134,7 +134,7 @@ function html(webview: vscode.Webview, root: vscode.Uri): string {
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource}; script-src 'nonce-${nonce}'; img-src ${webview.cspSource} data:;">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="stylesheet" href="${uri('webview.css')}">
-<title>Claude / Codex 本機監控</title>
+<title>Claude/codex Monitor 本機監控</title>
 </head>
 <body>
 <div id="app">
@@ -176,7 +176,7 @@ class EditorPanel {
 
   static show(hub: MonitorHub, context: vscode.ExtensionContext): void {
     if (EditorPanel.current) { EditorPanel.current.panel.reveal(); return; }
-    const panel = vscode.window.createWebviewPanel('claudeMonitor', 'Claude / Codex 本機監控', vscode.ViewColumn.Beside, {
+    const panel = vscode.window.createWebviewPanel('claudeMonitor', 'Claude/codex Monitor 本機監控', vscode.ViewColumn.Beside, {
       enableScripts: true,
       retainContextWhenHidden: true, // 切到別的分頁再回來，不用重建畫面與動畫狀態
       localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, 'media')],
@@ -284,7 +284,7 @@ async function ragMenu(log: vscode.OutputChannel): Promise<void> {
 
 export function activate(context: vscode.ExtensionContext): void {
   const hub = new MonitorHub();
-  const ragLog = vscode.window.createOutputChannel('Claude Monitor');
+  const ragLog = vscode.window.createOutputChannel('Claude/codex Monitor');
   /** 命令的共同收尾：未預期的錯誤寫進輸出面板並提示，不讓命令靜悄悄失敗。 */
   const guarded = (fn: () => Promise<void>) => (): Promise<void> => fn().catch(err => {
     ragLog.appendLine(`[RAG 資料庫] 未預期的錯誤：${String(err)}`);
@@ -304,8 +304,8 @@ export function activate(context: vscode.ExtensionContext): void {
 
   // 狀態列右下角的小按鈕：點一下顯示側邊欄
   const item = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 90);
-  item.text = '$(pulse) Claude Monitor';
-  item.tooltip = '顯示 Claude Code / Codex 本機監控（只讀取本機 Claude / Codex 逐字稿，不連網）';
+  item.text = '$(pulse) Claude/codex Monitor';
+  item.tooltip = '顯示 Claude/codex Monitor 本機監控（只讀取本機 Claude / Codex 逐字稿，不連網）';
   item.command = 'claudeMonitor.show';
   item.show();
   context.subscriptions.push(item);

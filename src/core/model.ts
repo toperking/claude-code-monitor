@@ -23,7 +23,7 @@ export interface Pt { x: number; y: number }
 
 // ── 版面常數 ─────────────────────────────────────────────────────────────
 export const Layout = {
-  AgentX: -260, AgentW: 120, AgentH: 56,
+  AgentX: -260, AgentW: 68, AgentH: 84,
   MaxRows: 14,
   // 列距 52（方塊 32 + 間距 20）；主 session 與各子代理的方塊群之間再多留 48，免得展開一塊就擠到鄰居
   RowH: 52, PillW: 176, PillH: 32, GroupGap: 48,
@@ -190,7 +190,7 @@ export class FlowAlien {
 export function alienHome(agent: FlowAgent | null): Pt {
   return agent === null
     ? { x: Layout.Hub.x + 42, y: Layout.Hub.y - Layout.HubR - 52 }
-    : { x: Layout.AgentX + 34, y: agent.y - Layout.AgentH / 2 - 32 };
+    : { x: Layout.AgentX + 104, y: agent.y - 55 };
 }
 
 /**
@@ -308,6 +308,8 @@ export class FlowModel {
 
   get windowMinutes(): number { return this.o.windowMinutes; }
   get providerLabel(): string { return this.o.provider ?? 'AI'; }
+  outputOffsetY = 0;
+  outputSlotOffset = 0;
   get freeIdle(): boolean { return this.o.freeIdle; }
   set freeIdle(v: boolean) { this.o.freeIdle = v; }
   get pillList(): readonly FlowPill[] { return this.ordered; }
@@ -549,7 +551,7 @@ export class FlowModel {
         u.deliverTarget = pend === ToolResult.Failed ? 'fail' : 'ok';
         u.deliverLeft = DeliverSeconds;
       }
-      const slot = u.outSlot;
+      const slot = (u.outSlot + this.outputSlotOffset) % Layout.OutSlots;
 
       // 自由活動：只在「AI 還在忙、沒有工具在跑」時才自己挑事情做；真實事件（有工具、AI 停下來）一來就中斷
       if (this.o.freeIdle && u.escortIndex === 0 && target === null && u.deliverTarget === null && this.busy && u.alive && !this.reduceMotion) {
@@ -561,7 +563,7 @@ export class FlowModel {
 
       let goal: Pt;
       if (target !== null) { const s = alienSpot(target, u.baseScale); goal = { x: s.x - u.rank * Layout.SquadSpacing * u.baseScale, y: s.y }; } // 同一個方塊上的隊員往左排開
-      else if (u.deliverTarget !== null) goal = alienOutSpot(u.deliverTarget === 'fail', u.baseScale, slot);
+      else if (u.deliverTarget !== null) { goal = alienOutSpot(u.deliverTarget === 'fail', u.baseScale, slot); goal = { x: goal.x, y: goal.y + this.outputOffsetY }; }
       else if (u.alive || agent !== null) { const h = alienHome(agent); goal = { x: h.x + u.patrolX + u.escortIndex * 52, y: h.y + u.patrolY }; }
       else goal = { x: u.x, y: u.y };
 
@@ -606,6 +608,7 @@ export class FlowModel {
         if (len > 1) { u.aimX = ax / len; u.aimY = ay / len; }
       } else if (u.deliverTarget !== null) { // 處理結果：瞄準圓環／REJECTED 的左緣
         const aim = outAim(u.deliverTarget === 'fail', slot);
+        aim.y += this.outputOffsetY;
         const ax = aim.x - u.x, ay = aim.y - u.y;
         const len = Math.sqrt(ax * ax + ay * ay);
         if (len > 1) { u.aimX = ax / len; u.aimY = ay / len; }
@@ -863,8 +866,8 @@ export function cubic(c: [Pt, Pt, Pt, Pt], t: number): Pt {
 export const routeIn = (p: FlowPill): [Pt, Pt, Pt, Pt] => route(p.agent
   ? { x: Layout.AgentX + Layout.AgentW / 2, y: p.agent.y }
   : { x: Layout.Hub.x + Layout.HubR, y: Layout.Hub.y }, { x: p.left, y: p.y });
-export const routeOut = (p: FlowPill): [Pt, Pt, Pt, Pt] => route({ x: p.right, y: p.y }, { x: Layout.Out.x - Layout.OutR, y: Layout.Out.y });
-export const routeRejected = (p: FlowPill): [Pt, Pt, Pt, Pt] => route({ x: p.right, y: p.y }, { x: Layout.Rej.x - 46, y: Layout.Rej.y });
+export const routeOut = (p: FlowPill, outputOffsetY = 0): [Pt, Pt, Pt, Pt] => route({ x: p.right, y: p.y }, { x: Layout.Out.x - Layout.OutR, y: Layout.Out.y + outputOffsetY });
+export const routeRejected = (p: FlowPill, outputOffsetY = 0): [Pt, Pt, Pt, Pt] => route({ x: p.right, y: p.y }, { x: Layout.Rej.x - 46, y: Layout.Rej.y + outputOffsetY });
 
 // ── 文字與顏色 ─────────────────────────────────────────────────────────────
 export const agentKey = (sessionId: string, agentId: string): string => sessionId + ':' + agentId;
@@ -885,7 +888,9 @@ export function colorOf(key: string): string {
 
 /** "claude-sonnet-5-5" → "SONNET 5.5" */
 export function formatModel(m: string | null | undefined): string {
-  let s = (m ?? '').replaceAll('claude-', '');
+  let s = (m ?? '').trim().replace(/^(?:codex|claude|openai|gemini)\s*[·:|]\s*/i, '');
+  if (/^gpt-/i.test(s)) return ('GPT-' + s.slice(4).replaceAll('-', ' ')).toUpperCase();
+  s = s.replace(/^claude-/i, '');
   s = s.replace(/-(\d)-(\d)/g, ' $1.$2').replaceAll('-', ' ');
   return s.toUpperCase();
 }

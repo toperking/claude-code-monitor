@@ -83,7 +83,8 @@ describe('independent provider flows', () => {
       const pill = row.model.pillList[0];
       const hit = (renderer as unknown as { hitScene(p: { x: number; y: number }): unknown }).hitScene({ x: 0, y: row.y + pill.y });
       expect(hit).toBe(pill);
-      expect(rec.texts).toContain(row.model.providerLabel.toUpperCase());
+      expect(rec.texts).toContain(row.model.modelText);
+      expect(rec.texts).not.toContain(row.model.providerLabel.toUpperCase());
     }
   });
 });

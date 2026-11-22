@@ -4,6 +4,8 @@
 
 import { BubbleAnchors, BubbleQueue } from '../core/bubbles';
 import { FlowSceneRow, flowSceneRows } from '../core/flowSceneLayout';
+import { BrainOutline, BrainFolds, BrainJunctions } from './brainGlyph';
+import { ArmorPaths } from './armorGlyph';
 import {
   FlowAlien, FlowModel, FlowPill, Layout, Palette, Pt, cubic, formatModel, hhmmss, num1, pillInfo,
   routeIn, routeOut, routeRejected, route,
@@ -13,6 +15,9 @@ import { SessionStatus, ToolCallDto, ToolResult, isActive } from '../core/types'
 const UI = '"Segoe UI Variable", "Segoe UI", "Microsoft JhengHei UI", system-ui, sans-serif';
 const MONO = '"Cascadia Mono", Consolas, "Microsoft JhengHei UI", monospace';
 const Breath = 800; // 呼吸週期：sin(ms / Breath)，越大越慢
+const BrainShape = new Path2D(BrainOutline);
+const BrainFoldPaths = BrainFolds.map(path => new Path2D(path));
+const ArmorShapes = Object.fromEntries(Object.entries(ArmorPaths).map(([key, path]) => [key, new Path2D(path)])) as Record<keyof typeof ArmorPaths, Path2D>;
 const ClickSlop = 4;
 
 type Align = 'left' | 'center' | 'right';
@@ -176,19 +181,17 @@ export class FlowRenderer {
     c.save();
     c.translate(this.w / 2 + this.camX, this.h / 2 + 30 + this.camY);
     c.scale(this.fit, this.fit);
-    for (const row of this.rows) {
+    for (const [rowIndex, row] of this.rows.entries()) {
       const m = row.model;
+      m.outputOffsetY = -row.y;
+      m.outputSlotOffset = rowIndex;
       c.save(); c.translate(0, row.y);
-      this.text(m.providerLabel.toUpperCase() + ' · ' + m.modelText, Layout.ChipX, -row.height / 2 + 38, 15, Palette.Text, { bold: true });
-      this.text(`執行中 ${m.stats.running} · 成功 ${m.stats.ok} · 失敗 ${m.stats.fail}`, Layout.ChipX, -row.height / 2 + 62, 12, Palette.Sub);
       this.alpha(m.source, () => { this.drawChipEdges(m); this.drawChips(m); this.drawHub(m); });
-      this.alpha(m.sink, () => { this.drawOutputs(m); this.drawSummary(m); });
       this.alpha(1, () => { this.drawEdges(m); this.drawPills(m); this.drawParticles(m); this.drawAliens(m); this.drawBubbles(m); });
       c.restore();
     }
+    this.alpha(Math.max(...models.map(m => m.sink)), () => { this.drawOutputs(models); this.drawSummary(models); });
     c.restore();
-    this.text('◈  AI FLOW', 18, 24, 13, Palette.Text, { bold: true });
-    this.text(models.map(m => m.providerLabel).join(' · '), this.w - 18, 24, 12, Palette.Sub, { align: 'right' });
   }
 
   // ── 小工具 ───────────────────────────────────────────────────────────
@@ -326,7 +329,7 @@ export class FlowRenderer {
     c.scale(this.fit, this.fit);
     // 三組各自用自己的透明度疊上去：AI（最先淡出）、output（最後淡出）、方塊與它們的連線／粒子（各方塊用自己的 fade）
     this.alpha(m.source, () => { this.drawChipEdges(m); this.drawChips(m); this.drawHub(m); });
-    this.alpha(m.sink, () => { this.drawOutputs(m); this.drawSummary(m); });
+    this.alpha(m.sink, () => { this.drawOutputs([m]); this.drawSummary([m]); });
     this.alpha(1, () => { this.drawEdges(m); this.drawPills(m); this.drawParticles(m); this.drawAliens(m); this.drawBubbles(m); });
     c.restore();
 
@@ -368,8 +371,8 @@ export class FlowRenderer {
       const pulse = m.reduceMotion ? 0 : 0.1 * Math.sin(this.ms / Breath);
       // 在「平常 0.2」與「執行中 0.55（±0.1 的緩慢呼吸）」之間依 runLevel 平滑過渡，而不是開關
       this.line(routeIn(p), p.color, 1.2 + 0.8 * lv, (0.2 + (0.35 + pulse) * lv) * p.fade, 12 * lv * p.fade);
-      this.line(routeOut(p), p.color, 1, (0.1 + (p.ok > 0 ? 0.1 : 0)) * p.fade, 0);
-      if (p.fail > 0) this.line(routeRejected(p), Palette.Fail, 1, 0.12 * p.fade, 0);
+      this.line(routeOut(p, m.outputOffsetY), p.color, 1, (0.1 + (p.ok > 0 ? 0.1 : 0)) * p.fade, 0);
+      if (p.fail > 0) this.line(routeRejected(p, m.outputOffsetY), Palette.Fail, 1, 0.12 * p.fade, 0);
     }
   }
 
@@ -419,13 +422,8 @@ export class FlowRenderer {
     for (const a of m.agents) {
       if (a.fade < 0.01) continue;
       this.alpha(a.fade, () => {
-        this.fillRR(Layout.AgentX - Layout.AgentW / 2, a.y - Layout.AgentH / 2, Layout.AgentW, Layout.AgentH, 9, rgba('#1a1510'), rgba(Palette.Task), 1.4);
-        const id = a.info.agentId.slice(0, 6).toUpperCase();
-        this.text('AGENT ' + id, Layout.AgentX, a.y - 16, 10, Palette.Task, { bold: true, mono: true, align: 'center' });
-        this.text(shorten(formatModel(a.info.model), 17), Layout.AgentX, a.y, 9, Palette.Text, { align: 'center' });
-        const sid = a.info.sessionId.slice(0, 4).toUpperCase();
-        const status = a.info.parentToolUseId === null ? '啟動關聯未知' : a.info.status;
-        this.text(sid + ' · ' + status, Layout.AgentX, a.y + 16, 9, Palette.Sub, { align: 'center' });
+        this.drawBrain(Layout.AgentX, a.y, .65, isActive(a.info.status), m.reduceMotion);
+        this.text(formatModel(a.info.model), Layout.AgentX, a.y + 45, 10, '#c6f7ff', { bold: true, mono: true, align: 'center' });
       });
     }
   }
@@ -452,52 +450,87 @@ export class FlowRenderer {
   }
 
   private drawHub(m: FlowModel): void {
-    const busy = m.sessions.some(s => s.status === SessionStatus.Responding || s.status === SessionStatus.RunningTool);
-    const pulse = m.reduceMotion ? 0 : Math.sin(this.ms / (busy ? Breath : Breath * 1.6)) * (busy ? 3 : 1.5); // 外圈呼吸：忙碌時稍快，閒置時更慢
     const { x, y } = Layout.Hub;
-    this.glowCircle(x, y, Layout.HubR, Palette.Agent, 1, 26);
-    this.circle(x, y, Layout.HubR, rgba('#101419'), rgba(Palette.Agent), 2.5);
-    this.circle(x, y, Layout.HubR + 9 + pulse, null, rgba(Palette.Agent, 0.35), 1);
-    this.text(m.providerLabel.toUpperCase(), x, y, m.providerLabel === 'AI' ? 16 : 12, Palette.Agent, { bold: true, align: 'center' });
-    if (m.modelText.length > 0) this.text(m.modelText, x, y + Layout.HubR + 22, 10, Palette.Sub, { mono: true, align: 'center' });
+    this.drawBrain(x, y, 1, m.busy, m.reduceMotion);
+    if (m.modelText.length > 0) this.text(m.modelText, x, y + 65, 15, '#c6f7ff', { bold: true, mono: true, align: 'center' });
   }
 
-  private drawOutputs(m: FlowModel): void {
-    const s = m.stats;
-    const done = s.ok + s.fail;
-    const ratio = done > 0 ? s.ok / done : 0;
-    const { x, y } = Layout.Out, R = Layout.OutR;
+  private drawBrain(x: number, y: number, scale: number, busy: boolean, reduceMotion: boolean): void {
+    const phase = reduceMotion ? 0 : this.ms / (busy ? 700 : 1400);
+    const breath = reduceMotion ? 1 : 1 + Math.sin(phase) * (busy ? .025 : .01);
+    const bob = reduceMotion ? 0 : Math.sin(phase * .7) * 1.8 * scale;
     const c = this.ctx;
-    // 已驗證輸出：圓環 = 成功比例
-    this.glowCircle(x, y, R, Palette.Ok, 1, 16 + 10 * m.outFlash);
-    this.circle(x, y, R, rgba('#0f1a14'), rgba('#1b3a2a'), 5);
-    if (ratio >= 0.9999) this.circle(x, y, R, null, rgba(Palette.Ok), 5);
-    else if (ratio > 0) {
-      const a0 = -Math.PI / 2;
-      c.beginPath(); c.arc(x, y, R, a0, a0 + Math.PI * 2 * ratio);
-      c.strokeStyle = rgba(Palette.Ok); c.lineWidth = 5; c.lineCap = 'round'; c.stroke(); c.lineCap = 'butt';
+    c.save(); c.translate(x, y + bob); c.scale(breath * scale, breath * scale);
+    this.glowStroke(BrainShape, '#3de5ff', .7, 17);
+    this.fillPath(BrainShape, rgba('#0a1d2c'), rgba('#62e6ff', .9), 1.8, true);
+    BrainFoldPaths.forEach((path, i) => {
+      const level = reduceMotion ? .6 : .45 + .45 * (1 + Math.sin(phase * 1.4 - i * .7)) / 2;
+      this.fillPath(path, null, rgba(i % 3 === 0 ? '#c59aff' : '#38d9ef', level), 1.4, true);
+    });
+    BrainJunctions.forEach(([nx, ny], i) => {
+      const pulse = reduceMotion ? .3 : Math.pow(Math.max(0, Math.sin(phase * 2 - i * .8)), 6);
+      this.circle(nx, ny, 3.5 + pulse * 2, rgba('#3de5ff', .1 + pulse * .25));
+      this.circle(nx, ny, 1.3 + pulse, rgba('#d4fbff', .45 + pulse * .55));
+    });
+    if (!reduceMotion) {
+      const scanY = -44 + ((this.ms / (busy ? 2400 : 4800)) % 1) * 92;
+      c.save(); c.clip(BrainShape);
+      c.fillStyle = rgba('#71f4ff', .08); c.fillRect(-52, scanY - 9, 104, 10);
+      this.lineSeg(-52, scanY, 52, scanY, rgba('#adfaff', .65), 1);
+      c.restore();
     }
-    c.beginPath(); c.moveTo(x - 16, y + 2); c.lineTo(x - 5, y + 13); c.lineTo(x + 17, y - 10);
-    c.strokeStyle = rgba(Palette.Ok); c.lineWidth = 4; c.lineCap = 'round'; c.lineJoin = 'round'; c.stroke(); c.lineCap = 'butt'; c.lineJoin = 'miter';
-    this.text('VERIFIED OUTPUT', x, y + R + 20, 10, Palette.Ok, { bold: true, mono: true, align: 'center' });
-    this.text(`${s.ok} / ${done} checked`, x, y + R + 34, 10, Palette.Sub, { mono: true, align: 'center' });
-
-    // 失敗（rejected）
-    const rx = Layout.Rej.x - 46, ry = Layout.Rej.y - 15;
-    this.glowRect(rx, ry, 92, 30, 8, Palette.Fail, 1, 6 + 8 * m.rejFlash);
-    this.fillRR(rx, ry, 92, 30, 8, rgba('#1a1012'), rgba(Palette.Fail, s.fail > 0 ? 1 : 0.4), s.fail > 0 ? 1.6 : 1);
-    this.text('REJECTED', Layout.Rej.x - 38, Layout.Rej.y, 10, Palette.Fail, { bold: true, mono: true });
-    this.text(String(s.fail), Layout.Rej.x + 38, Layout.Rej.y, 10, Palette.Fail, { bold: true, mono: true, align: 'right' });
+    c.restore();
   }
 
-  // 說明泡泡：方塊 → 出現在方塊右側（尾巴指向方塊）；子代理 → 出現在節點上方（尾巴向下）。
-  // 可見度 = 泡泡自己的淡入淡出 × 它所指向元素的淡出，所以元素淡出時泡泡也跟著淡。
+  private drawOutputs(models: readonly FlowModel[]): void {
+    this.drawArmor(false, models);
+    this.drawArmor(true, models);
+    this.text('成功 ' + models.reduce((n, m) => n + m.stats.ok, 0), Layout.Out.x, Layout.Out.y + 66, 12, Palette.Ok, { bold: true, mono: true, align: 'center' });
+    this.text('失敗 ' + models.reduce((n, m) => n + m.stats.fail, 0), Layout.Rej.x, Layout.Rej.y + 66, 12, Palette.Fail, { bold: true, mono: true, align: 'center' });
+  }
+
+  private drawArmor(leg: boolean, models: readonly FlowModel[]): void {
+    const reduce = models.every(m => m.reduceMotion);
+    const busy = models.some(m => m.busy);
+    const flash = Math.max(...models.map(m => leg ? m.rejFlash : m.outFlash));
+    const phase = reduce ? 0 : this.ms / (busy ? 500 : 1100);
+    const angle = reduce ? 0 : Math.sin(phase) * (busy ? 4 : 1.2) + flash * (leg ? -6 : 7);
+    const color = leg ? Palette.Fail : Palette.Ok;
+    const anchor = leg ? Layout.Rej : Layout.Out;
+    const pivot = leg ? { x: -3, y: -7 } : { x: -17, y: 24 };
+    const c = this.ctx;
+    c.save(); c.translate(anchor.x, anchor.y);
+    const plate = (shape: Path2D, fill: string, bright = false): void => {
+      this.glowStroke(shape, color, bright ? .5 + flash : .2, bright ? 7 + flash * 10 : 4);
+      this.fillPath(shape, rgba(fill), rgba(bright ? color : '#7090a8', .95), bright ? 1.5 : 1.1, true);
+    };
+    this.lineSeg(leg ? -46 : -54, 0, pivot.x, pivot.y, rgba(color, .6), 2);
+    plate(leg ? ArmorShapes.Thigh : ArmorShapes.UpperArm, '#172635');
+    plate(leg ? ArmorShapes.ThighFacet : ArmorShapes.UpperFacet, '#38536b');
+    this.circle(pivot.x, pivot.y, 8, rgba('#0d1925'), rgba('#8da8bd'), 1.4);
+    this.circle(pivot.x, pivot.y, 3, rgba(color, .6 + flash * .4));
+    c.translate(pivot.x, pivot.y); c.rotate(angle * Math.PI / 180); c.translate(-pivot.x, -pivot.y);
+    plate(leg ? ArmorShapes.Shin : ArmorShapes.Forearm, '#152938', true);
+    plate(leg ? ArmorShapes.ShinFacet : ArmorShapes.ForeFacet, '#42657a');
+    plate(leg ? ArmorShapes.Boot : ArmorShapes.Fist, '#243e52', true);
+    if (leg) plate(ArmorShapes.BootFacet, '#55778d');
+    else this.fillPath(ArmorShapes.Fingers, null, rgba('#a9d9ec', .8), 1.2, true);
+    const u = reduce ? .5 : (this.ms / (busy ? 1300 : 2600)) % 1;
+    const px = leg ? -3 + 11 * u : -16 + 30 * u;
+    const py = leg ? -7 + 37 * u : 20 - 44 * u;
+    this.circle(px, py, 6, rgba(color, .16));
+    this.circle(px, py, 1.7, rgba('#e5ffff', .9));
+    c.restore();
+  }
+
   private drawBubbles(m: FlowModel): void {
     const h = 26, tail = 6, stackGap = 4;
     const stacked = new Map<string, number>(); // 同一個位置同時有幾顆：第 2 顆起往外排開，不疊在一起
     for (const b of m.bubbles.items) {
+      if (b.anchorKey === BubbleAnchors.Hub) continue;
       const pill = m.pillList.find(p => p.key === b.anchorKey);
       const agent = pill ? undefined : m.agents.find(a => a.key === b.anchorKey);
+      if (!pill && m.agents.some(a => a.key === b.anchorKey)) continue;
       if (!pill && !agent && !BubbleAnchors.isFixed(b.anchorKey)) continue;
       const nth = stacked.get(b.anchorKey) ?? 0;
       stacked.set(b.anchorKey, nth + 1);
@@ -515,6 +548,12 @@ export class FlowRenderer {
         bx = pill.right + 18; by = pill.y - h / 2 + dy;
         if (nth === 0) { // 只有第一顆畫尾巴；往下排開的幾顆是同一個方塊的補充說明
           tailPath.moveTo(pill.right + 5, pill.y); tailPath.lineTo(bx + 1, pill.y - tail); tailPath.lineTo(bx + 1, pill.y + tail); tailPath.closePath();
+        }
+      } else if (b.anchorKey === BubbleAnchors.Rejected) {
+        const cy = Layout.Rej.y + m.outputOffsetY;
+        bx = Layout.Rej.x - 105 - w; by = cy - h / 2 + dy;
+        if (nth === 0) {
+          tailPath.moveTo(Layout.Rej.x - 52, cy); tailPath.lineTo(bx + w - 1, cy - tail); tailPath.lineTo(bx + w - 1, cy + tail); tailPath.closePath();
         }
       } else {
         // 子代理與 AI 主節點：泡泡在上方，尾巴朝下；REJECTED：泡泡在下方，尾巴朝上
@@ -542,7 +581,7 @@ export class FlowRenderer {
     for (const pt of m.particles) {
       const p = m.pillList.find(x => x.key === pt.pillKey);
       if (!p) continue;
-      const path = pt.kind === 'in' ? routeIn(p) : pt.kind === 'out' ? routeOut(p) : routeRejected(p);
+      const path = pt.kind === 'in' ? routeIn(p) : pt.kind === 'out' ? routeOut(p, m.outputOffsetY) : routeRejected(p, m.outputOffsetY);
       for (let i = 8; i >= 0; i--) { // 彗星尾巴
         const q = cubic(path, Math.min(1, Math.max(0, pt.t - i * 0.03)));
         const r = 4.6 - i * 0.4;
@@ -913,13 +952,14 @@ export class FlowRenderer {
   }
 
   // 右下摘要卡
-  private drawSummary(m: FlowModel): void {
+  private drawSummary(models: readonly FlowModel[]): void {
+    const m = models[0];
     const x = 330, y = 190, w = 290, h = 92;
     this.fillRR(x, y, w, h, 10, rgba('#10141a', 0.92), rgba('#232a33'), 1);
     this.circle(x + 16, y + 18, 3, rgba(Palette.Ok));
     this.text(`WINDOW · ${m.windowMinutes} MIN`, x + 26, y + 18, 10, Palette.Sub, { mono: true });
-    this.text(`${m.stats.total} 次呼叫`, x + 16, y + 49, 30, Palette.Text, { bold: true });
-    this.text(`${m.agents.length} 子代理 · ${m.pillList.length} 工具節點 · ${m.stats.running} 執行中`, x + 16, y + 76, 11, Palette.Sub);
+    this.text(`${models.reduce((n, m) => n + m.stats.total, 0)} 次呼叫`, x + 16, y + 49, 30, Palette.Text, { bold: true });
+    this.text(`${models.reduce((n, m) => n + m.agents.length, 0)} 子代理 · ${models.reduce((n, m) => n + m.pillList.length, 0)} 工具節點 · ${models.reduce((n, m) => n + m.stats.running, 0)} 執行中`, x + 16, y + 76, 11, Palette.Sub);
   }
 
   // 底部日誌：最近 3 筆真實呼叫（螢幕座標，不隨縮放），屬於 output，最後才淡出

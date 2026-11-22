@@ -1,8 +1,8 @@
 {
   "name": "claude-code-monitor",
-  "displayName": "Claude Code / Codex 本機監控",
-  "description": "Claude Code 與 Codex 共用桌布、各自獨立節點與機甲：唯讀本機逐字稿，不連網、不上傳。",
-  "version": "0.4.0",
+  "displayName": "Claude/codex Monitor 本機監控",
+  "description": "Claude 與 Codex 動態大腦流程桌布，主／子代理獨立、所有來源共用一組裝甲手腳輸出：唯讀本機逐字稿。",
+  "version": "0.5.0",
   "publisher": "toperking",
   "license": "MIT",
   "repository": {
@@ -33,34 +33,34 @@
     "commands": [
       {
         "command": "claudeMonitor.show",
-        "title": "Claude Monitor: 顯示側邊欄",
+        "title": "Claude/codex Monitor: 顯示側邊欄",
         "icon": "$(pulse)"
       },
       {
         "command": "claudeMonitor.open",
-        "title": "Claude Monitor: 在編輯區開啟（較大）",
+        "title": "Claude/codex Monitor: 在編輯區開啟（較大）",
         "icon": "$(link-external)"
       },
       {
         "command": "claudeMonitor.ragMenu",
-        "title": "Claude Monitor: RAG 資料庫設定（選資料夾、套用）",
+        "title": "Claude/codex Monitor: RAG 資料庫設定（選資料夾、套用）",
         "icon": "$(gear)"
       },
       {
         "command": "claudeMonitor.pickRagDbFolder",
-        "title": "Claude Monitor: 選擇 RAG 資料庫的資料夾…"
+        "title": "Claude/codex Monitor: 選擇 RAG 資料庫的資料夾…"
       },
       {
         "command": "claudeMonitor.openRagSettings",
-        "title": "Claude Monitor: 開啟 RAG 設定頁"
+        "title": "Claude/codex Monitor: 開啟 RAG 設定頁"
       },
       {
         "command": "claudeMonitor.applyRagDb",
-        "title": "Claude Monitor: 套用 RAG 資料庫位置（搬移並重新註冊）"
+        "title": "Claude/codex Monitor: 套用 RAG 資料庫位置（搬移並重新註冊）"
       }
     ],
     "configuration": {
-      "title": "Claude Monitor",
+      "title": "Claude/codex Monitor",
       "properties": {
         "claudeMonitor.codexEnabled": {
           "type": "boolean",
@@ -125,7 +125,7 @@
       "activitybar": [
         {
           "id": "claudeMonitor",
-          "title": "Claude Monitor",
+          "title": "Claude/codex Monitor",
           "icon": "resources/activity.svg"
         }
       ]

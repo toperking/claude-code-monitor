@@ -4,6 +4,7 @@ import { vi } from 'vitest';
 // 渲染器在載入時就會用到 Path2D，所以要先裝好假的，測試裡再 `await import('../src/webview/render')`。
 
 export class FakePath {
+  constructor(readonly svgSource?: string) {}
   pts: [number, number][] = [];
   moveTo(x: number, y: number): void { this.pts.push([x, y]); }
   lineTo(x: number, y: number): void { this.pts.push([x, y]); }

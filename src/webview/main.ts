@@ -2,6 +2,7 @@
 // 狀態列與「說明泡泡」開關是一般 HTML；流程圖是 Canvas。
 
 import { FlowModel } from '../core/model';
+import { flowSceneRows } from '../core/flowSceneLayout';
 import { snapshotProviders } from '../core/providerSnapshot';
 import { MonitorSnapshot, isActive } from '../core/types';
 import { FlowRenderer } from './render';
@@ -101,6 +102,7 @@ const frame = (ts: number): void => {
     const dt = lastDraw === 0 ? 0 : (ts - lastDraw) / 1000;
     lastDraw = ts;
     const t0 = performance.now();
+    flowSceneRows(models).forEach((row, i) => { row.model.outputOffsetY = -row.y; row.model.outputSlotOffset = i; });
     models.forEach(m => m.tick(dt, Date.now()));
     renderer.renderScene(models, ts);
     renderStats.frames++; renderStats.ms += performance.now() - t0;

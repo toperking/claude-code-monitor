@@ -130,8 +130,8 @@
   };
   var Layout = {
     AgentX: -260,
-    AgentW: 120,
-    AgentH: 56,
+    AgentW: 68,
+    AgentH: 84,
     MaxRows: 14,
     // 列距 52（方塊 32 + 間距 20）；主 session 與各子代理的方塊群之間再多留 48，免得展開一塊就擠到鄰居
     RowH: 52,
@@ -310,7 +310,7 @@
     }
   };
   function alienHome(agent) {
-    return agent === null ? { x: Layout.Hub.x + 42, y: Layout.Hub.y - Layout.HubR - 52 } : { x: Layout.AgentX + 34, y: agent.y - Layout.AgentH / 2 - 32 };
+    return agent === null ? { x: Layout.Hub.x + 42, y: Layout.Hub.y - Layout.HubR - 52 } : { x: Layout.AgentX + 104, y: agent.y - 55 };
   }
   function alienSpot(p, baseScale = 1) {
     return { x: p.left - AlienReachUnits * Layout.AlienUnit * baseScale - 20, y: p.y };
@@ -397,6 +397,8 @@
     get providerLabel() {
       return this.o.provider ?? "AI";
     }
+    outputOffsetY = 0;
+    outputSlotOffset = 0;
     get freeIdle() {
       return this.o.freeIdle;
     }
@@ -633,7 +635,7 @@
           u.deliverTarget = pend === ToolResult.Failed ? "fail" : "ok";
           u.deliverLeft = DeliverSeconds;
         }
-        const slot = u.outSlot;
+        const slot = (u.outSlot + this.outputSlotOffset) % Layout.OutSlots;
         if (this.o.freeIdle && u.escortIndex === 0 && target === null && u.deliverTarget === null && this.busy && u.alive && !this.reduceMotion) {
           u.idleLeft -= dt;
           if (u.idleLeft <= 0) this.pickIdle(u);
@@ -646,8 +648,10 @@
         if (target !== null) {
           const s = alienSpot(target, u.baseScale);
           goal = { x: s.x - u.rank * Layout.SquadSpacing * u.baseScale, y: s.y };
-        } else if (u.deliverTarget !== null) goal = alienOutSpot(u.deliverTarget === "fail", u.baseScale, slot);
-        else if (u.alive || agent !== null) {
+        } else if (u.deliverTarget !== null) {
+          goal = alienOutSpot(u.deliverTarget === "fail", u.baseScale, slot);
+          goal = { x: goal.x, y: goal.y + this.outputOffsetY };
+        } else if (u.alive || agent !== null) {
           const h = alienHome(agent);
           goal = { x: h.x + u.patrolX + u.escortIndex * 52, y: h.y + u.patrolY };
         } else goal = { x: u.x, y: u.y };
@@ -697,6 +701,7 @@
           }
         } else if (u.deliverTarget !== null) {
           const aim = outAim(u.deliverTarget === "fail", slot);
+          aim.y += this.outputOffsetY;
           const ax = aim.x - u.x, ay = aim.y - u.y;
           const len = Math.sqrt(ax * ax + ay * ay);
           if (len > 1) {
@@ -940,8 +945,8 @@
     };
   }
   var routeIn = (p) => route(p.agent ? { x: Layout.AgentX + Layout.AgentW / 2, y: p.agent.y } : { x: Layout.Hub.x + Layout.HubR, y: Layout.Hub.y }, { x: p.left, y: p.y });
-  var routeOut = (p) => route({ x: p.right, y: p.y }, { x: Layout.Out.x - Layout.OutR, y: Layout.Out.y });
-  var routeRejected = (p) => route({ x: p.right, y: p.y }, { x: Layout.Rej.x - 46, y: Layout.Rej.y });
+  var routeOut = (p, outputOffsetY = 0) => route({ x: p.right, y: p.y }, { x: Layout.Out.x - Layout.OutR, y: Layout.Out.y + outputOffsetY });
+  var routeRejected = (p, outputOffsetY = 0) => route({ x: p.right, y: p.y }, { x: Layout.Rej.x - 46, y: Layout.Rej.y + outputOffsetY });
   var agentKey = (sessionId, agentId) => sessionId + ":" + agentId;
   function pillInfo(tool) {
     const p = tool.split("__");
@@ -955,7 +960,9 @@
     return hslToHex(Math.abs(h) % 360, 0.85, 0.64);
   }
   function formatModel(m) {
-    let s = (m ?? "").replaceAll("claude-", "");
+    let s = (m ?? "").trim().replace(/^(?:codex|claude|openai|gemini)\s*[·:|]\s*/i, "");
+    if (/^gpt-/i.test(s)) return ("GPT-" + s.slice(4).replaceAll("-", " ")).toUpperCase();
+    s = s.replace(/^claude-/i, "");
     s = s.replace(/-(\d)-(\d)/g, " $1.$2").replaceAll("-", " ");
     return s.toUpperCase();
   }
@@ -1072,10 +1079,50 @@
     });
   }
 
+  // src/webview/brainGlyph.ts
+  var BrainOutline = "M -45 5 C -51 -4 -45 -21 -35 -27 C -30 -38 -15 -42 -5 -40 C 7 -47 24 -39 31 -32 C 45 -29 51 -15 48 -4 C 54 8 43 23 31 24 C 26 33 12 33 3 25 C -7 30 -20 25 -25 18 C -35 23 -47 16 -45 5 Z M 12 27 C 10 34 14 41 20 47 L 28 43 C 22 37 22 31 26 27 Z";
+  var BrainFolds = [
+    "M -43 -7 C -34 -15 -29 -8 -33 -1 C -37 5 -29 10 -23 5 C -17 1 -15 9 -19 15",
+    "M -35 -27 C -36 -17 -24 -24 -20 -17 C -17 -10 -25 -9 -25 -3",
+    "M -19 -37 C -26 -30 -14 -30 -10 -26 C -6 -21 -13 -17 -8 -12",
+    "M -5 -40 C -9 -33 4 -35 7 -28 C 9 -22 1 -20 5 -15 C 10 -8 19 -17 21 -8",
+    "M 15 -40 C 22 -33 13 -30 18 -24 C 23 -19 30 -26 34 -19",
+    "M 31 -32 C 30 -24 43 -24 42 -13 C 41 -6 34 -12 32 -5 C 30 1 39 3 44 -1",
+    "M -42 9 C -35 4 -33 18 -25 18 M -23 5 C -19 -4 -9 -2 -11 5 C -13 13 -4 13 0 8",
+    "M -25 18 C -15 15 -14 24 -6 22 C 1 19 -2 12 6 14",
+    "M -7 -12 C -3 -6 -14 -7 -17 -2 M 5 -15 C -1 -10 8 -5 4 1 C 0 5 -4 -1 -8 3",
+    "M 21 -8 C 25 -1 15 0 16 6 C 17 13 27 6 30 11",
+    "M 32 -5 C 25 -10 29 -17 23 -19 M 1 8 C 5 1 14 6 10 13 C 7 19 11 23 15 22",
+    "M 44 5 C 38 9 36 17 28 15 C 18 11 13 19 10 24",
+    "M 3 25 C 11 18 25 19 33 23 M 9 27 C 16 23 24 25 29 27",
+    "M 14 30 C 19 27 23 29 25 30 M 15 33 C 19 31 22 32 23 33",
+    "M -43 -15 C -39 -19 -34 -15 -35 -10 M -11 -35 C -5 -30 -1 -34 2 -29"
+  ];
+  var BrainJunctions = [[-35, -27], [-20, -17], [-33, -1], [-23, 5], [-10, -26], [7, -28], [18, -24], [42, -13], [32, -5], [4, 1], [16, 6], [-6, 22], [30, 11], [15, 22]];
+
+  // src/webview/armorGlyph.ts
+  var ArmorPaths = {
+    "UpperArm": "M -54 -4 L -38 -16 L -19 -4 L -7 21 L -17 37 L -37 24 Z",
+    "UpperFacet": "M -48 -3 L -38 -10 L -24 -1 L -16 17 L -23 22 L -36 14 Z",
+    "Forearm": "M -27 17 L -8 29 L 23 -10 L 9 -29 L -5 -17 Z",
+    "ForeFacet": "M -16 13 L -7 18 L 15 -10 L 8 -20 L 1 -13 Z",
+    "Fist": "M -3 -28 L -6 -44 L 0 -52 L 8 -52 L 12 -47 L 16 -54 L 25 -52 L 28 -47 L 35 -48 L 42 -40 L 40 -23 L 30 -13 L 12 -14 L 7 -20 L 1 -17 L -6 -22 Z",
+    "Fingers": "M 4 -46 L 7 -35 M 17 -46 L 19 -34 M 30 -42 L 31 -32 M 11 -26 L 31 -26",
+    "Thigh": "M -22 -52 L 6 -55 L 21 -39 L 10 -9 L -14 -6 L -24 -28 Z",
+    "ThighFacet": "M -14 -44 L 3 -47 L 12 -35 L 4 -15 L -9 -15 L -16 -30 Z",
+    "Shin": "M -17 -4 L 13 -4 L 23 25 L 10 39 L -13 28 L -22 9 Z",
+    "ShinFacet": "M -10 4 L 6 4 L 14 24 L 7 29 L -7 22 L -14 10 Z",
+    "Boot": "M -12 25 L 14 25 L 26 33 L 44 38 L 42 49 L -20 49 L -24 39 Z",
+    "BootFacet": "M -12 34 L 10 33 L 24 40 L 36 42 L 35 44 L -17 44 Z"
+  };
+
   // src/webview/render.ts
   var UI = '"Segoe UI Variable", "Segoe UI", "Microsoft JhengHei UI", system-ui, sans-serif';
   var MONO = '"Cascadia Mono", Consolas, "Microsoft JhengHei UI", monospace';
   var Breath = 800;
+  var BrainShape = new Path2D(BrainOutline);
+  var BrainFoldPaths = BrainFolds.map((path) => new Path2D(path));
+  var ArmorShapes = Object.fromEntries(Object.entries(ArmorPaths).map(([key, path]) => [key, new Path2D(path)]));
   var ClickSlop = 4;
   var colorCache = /* @__PURE__ */ new Map();
   function rgba(hex, alpha = 1) {
@@ -1255,20 +1302,16 @@
       c.save();
       c.translate(this.w / 2 + this.camX, this.h / 2 + 30 + this.camY);
       c.scale(this.fit, this.fit);
-      for (const row of this.rows) {
+      for (const [rowIndex, row] of this.rows.entries()) {
         const m = row.model;
+        m.outputOffsetY = -row.y;
+        m.outputSlotOffset = rowIndex;
         c.save();
         c.translate(0, row.y);
-        this.text(m.providerLabel.toUpperCase() + " \xB7 " + m.modelText, Layout.ChipX, -row.height / 2 + 38, 15, Palette.Text, { bold: true });
-        this.text(`\u57F7\u884C\u4E2D ${m.stats.running} \xB7 \u6210\u529F ${m.stats.ok} \xB7 \u5931\u6557 ${m.stats.fail}`, Layout.ChipX, -row.height / 2 + 62, 12, Palette.Sub);
         this.alpha(m.source, () => {
           this.drawChipEdges(m);
           this.drawChips(m);
           this.drawHub(m);
-        });
-        this.alpha(m.sink, () => {
-          this.drawOutputs(m);
-          this.drawSummary(m);
         });
         this.alpha(1, () => {
           this.drawEdges(m);
@@ -1279,9 +1322,11 @@
         });
         c.restore();
       }
+      this.alpha(Math.max(...models2.map((m) => m.sink)), () => {
+        this.drawOutputs(models2);
+        this.drawSummary(models2);
+      });
       c.restore();
-      this.text("\u25C8  AI FLOW", 18, 24, 13, Palette.Text, { bold: true });
-      this.text(models2.map((m) => m.providerLabel).join(" \xB7 "), this.w - 18, 24, 12, Palette.Sub, { align: "right" });
     }
     // ── 小工具 ───────────────────────────────────────────────────────────
     alpha(a, draw) {
@@ -1448,8 +1493,8 @@
         this.drawHub(m);
       });
       this.alpha(m.sink, () => {
-        this.drawOutputs(m);
-        this.drawSummary(m);
+        this.drawOutputs([m]);
+        this.drawSummary([m]);
       });
       this.alpha(1, () => {
         this.drawEdges(m);
@@ -1493,8 +1538,8 @@
         const lv = p.runLevel;
         const pulse = m.reduceMotion ? 0 : 0.1 * Math.sin(this.ms / Breath);
         this.line(routeIn(p), p.color, 1.2 + 0.8 * lv, (0.2 + (0.35 + pulse) * lv) * p.fade, 12 * lv * p.fade);
-        this.line(routeOut(p), p.color, 1, (0.1 + (p.ok > 0 ? 0.1 : 0)) * p.fade, 0);
-        if (p.fail > 0) this.line(routeRejected(p), Palette.Fail, 1, 0.12 * p.fade, 0);
+        this.line(routeOut(p, m.outputOffsetY), p.color, 1, (0.1 + (p.ok > 0 ? 0.1 : 0)) * p.fade, 0);
+        if (p.fail > 0) this.line(routeRejected(p, m.outputOffsetY), Palette.Fail, 1, 0.12 * p.fade, 0);
       }
     }
     drawChips(m) {
@@ -1537,13 +1582,8 @@
       for (const a of m.agents) {
         if (a.fade < 0.01) continue;
         this.alpha(a.fade, () => {
-          this.fillRR(Layout.AgentX - Layout.AgentW / 2, a.y - Layout.AgentH / 2, Layout.AgentW, Layout.AgentH, 9, rgba("#1a1510"), rgba(Palette.Task), 1.4);
-          const id = a.info.agentId.slice(0, 6).toUpperCase();
-          this.text("AGENT " + id, Layout.AgentX, a.y - 16, 10, Palette.Task, { bold: true, mono: true, align: "center" });
-          this.text(shorten(formatModel(a.info.model), 17), Layout.AgentX, a.y, 9, Palette.Text, { align: "center" });
-          const sid = a.info.sessionId.slice(0, 4).toUpperCase();
-          const status = a.info.parentToolUseId === null ? "\u555F\u52D5\u95DC\u806F\u672A\u77E5" : a.info.status;
-          this.text(sid + " \xB7 " + status, Layout.AgentX, a.y + 16, 9, Palette.Sub, { align: "center" });
+          this.drawBrain(Layout.AgentX, a.y, 0.65, isActive(a.info.status), m.reduceMotion);
+          this.text(formatModel(a.info.model), Layout.AgentX, a.y + 45, 10, "#c6f7ff", { bold: true, mono: true, align: "center" });
         });
       }
     }
@@ -1569,61 +1609,90 @@
       c.restore();
     }
     drawHub(m) {
-      const busy = m.sessions.some((s) => s.status === SessionStatus.Responding || s.status === SessionStatus.RunningTool);
-      const pulse = m.reduceMotion ? 0 : Math.sin(this.ms / (busy ? Breath : Breath * 1.6)) * (busy ? 3 : 1.5);
       const { x, y } = Layout.Hub;
-      this.glowCircle(x, y, Layout.HubR, Palette.Agent, 1, 26);
-      this.circle(x, y, Layout.HubR, rgba("#101419"), rgba(Palette.Agent), 2.5);
-      this.circle(x, y, Layout.HubR + 9 + pulse, null, rgba(Palette.Agent, 0.35), 1);
-      this.text(m.providerLabel.toUpperCase(), x, y, m.providerLabel === "AI" ? 16 : 12, Palette.Agent, { bold: true, align: "center" });
-      if (m.modelText.length > 0) this.text(m.modelText, x, y + Layout.HubR + 22, 10, Palette.Sub, { mono: true, align: "center" });
+      this.drawBrain(x, y, 1, m.busy, m.reduceMotion);
+      if (m.modelText.length > 0) this.text(m.modelText, x, y + 65, 15, "#c6f7ff", { bold: true, mono: true, align: "center" });
     }
-    drawOutputs(m) {
-      const s = m.stats;
-      const done = s.ok + s.fail;
-      const ratio = done > 0 ? s.ok / done : 0;
-      const { x, y } = Layout.Out, R = Layout.OutR;
+    drawBrain(x, y, scale, busy, reduceMotion) {
+      const phase = reduceMotion ? 0 : this.ms / (busy ? 700 : 1400);
+      const breath = reduceMotion ? 1 : 1 + Math.sin(phase) * (busy ? 0.025 : 0.01);
+      const bob = reduceMotion ? 0 : Math.sin(phase * 0.7) * 1.8 * scale;
       const c = this.ctx;
-      this.glowCircle(x, y, R, Palette.Ok, 1, 16 + 10 * m.outFlash);
-      this.circle(x, y, R, rgba("#0f1a14"), rgba("#1b3a2a"), 5);
-      if (ratio >= 0.9999) this.circle(x, y, R, null, rgba(Palette.Ok), 5);
-      else if (ratio > 0) {
-        const a0 = -Math.PI / 2;
-        c.beginPath();
-        c.arc(x, y, R, a0, a0 + Math.PI * 2 * ratio);
-        c.strokeStyle = rgba(Palette.Ok);
-        c.lineWidth = 5;
-        c.lineCap = "round";
-        c.stroke();
-        c.lineCap = "butt";
+      c.save();
+      c.translate(x, y + bob);
+      c.scale(breath * scale, breath * scale);
+      this.glowStroke(BrainShape, "#3de5ff", 0.7, 17);
+      this.fillPath(BrainShape, rgba("#0a1d2c"), rgba("#62e6ff", 0.9), 1.8, true);
+      BrainFoldPaths.forEach((path, i) => {
+        const level = reduceMotion ? 0.6 : 0.45 + 0.45 * (1 + Math.sin(phase * 1.4 - i * 0.7)) / 2;
+        this.fillPath(path, null, rgba(i % 3 === 0 ? "#c59aff" : "#38d9ef", level), 1.4, true);
+      });
+      BrainJunctions.forEach(([nx, ny], i) => {
+        const pulse = reduceMotion ? 0.3 : Math.pow(Math.max(0, Math.sin(phase * 2 - i * 0.8)), 6);
+        this.circle(nx, ny, 3.5 + pulse * 2, rgba("#3de5ff", 0.1 + pulse * 0.25));
+        this.circle(nx, ny, 1.3 + pulse, rgba("#d4fbff", 0.45 + pulse * 0.55));
+      });
+      if (!reduceMotion) {
+        const scanY = -44 + this.ms / (busy ? 2400 : 4800) % 1 * 92;
+        c.save();
+        c.clip(BrainShape);
+        c.fillStyle = rgba("#71f4ff", 0.08);
+        c.fillRect(-52, scanY - 9, 104, 10);
+        this.lineSeg(-52, scanY, 52, scanY, rgba("#adfaff", 0.65), 1);
+        c.restore();
       }
-      c.beginPath();
-      c.moveTo(x - 16, y + 2);
-      c.lineTo(x - 5, y + 13);
-      c.lineTo(x + 17, y - 10);
-      c.strokeStyle = rgba(Palette.Ok);
-      c.lineWidth = 4;
-      c.lineCap = "round";
-      c.lineJoin = "round";
-      c.stroke();
-      c.lineCap = "butt";
-      c.lineJoin = "miter";
-      this.text("VERIFIED OUTPUT", x, y + R + 20, 10, Palette.Ok, { bold: true, mono: true, align: "center" });
-      this.text(`${s.ok} / ${done} checked`, x, y + R + 34, 10, Palette.Sub, { mono: true, align: "center" });
-      const rx = Layout.Rej.x - 46, ry = Layout.Rej.y - 15;
-      this.glowRect(rx, ry, 92, 30, 8, Palette.Fail, 1, 6 + 8 * m.rejFlash);
-      this.fillRR(rx, ry, 92, 30, 8, rgba("#1a1012"), rgba(Palette.Fail, s.fail > 0 ? 1 : 0.4), s.fail > 0 ? 1.6 : 1);
-      this.text("REJECTED", Layout.Rej.x - 38, Layout.Rej.y, 10, Palette.Fail, { bold: true, mono: true });
-      this.text(String(s.fail), Layout.Rej.x + 38, Layout.Rej.y, 10, Palette.Fail, { bold: true, mono: true, align: "right" });
+      c.restore();
     }
-    // 說明泡泡：方塊 → 出現在方塊右側（尾巴指向方塊）；子代理 → 出現在節點上方（尾巴向下）。
-    // 可見度 = 泡泡自己的淡入淡出 × 它所指向元素的淡出，所以元素淡出時泡泡也跟著淡。
+    drawOutputs(models2) {
+      this.drawArmor(false, models2);
+      this.drawArmor(true, models2);
+      this.text("\u6210\u529F " + models2.reduce((n, m) => n + m.stats.ok, 0), Layout.Out.x, Layout.Out.y + 66, 12, Palette.Ok, { bold: true, mono: true, align: "center" });
+      this.text("\u5931\u6557 " + models2.reduce((n, m) => n + m.stats.fail, 0), Layout.Rej.x, Layout.Rej.y + 66, 12, Palette.Fail, { bold: true, mono: true, align: "center" });
+    }
+    drawArmor(leg, models2) {
+      const reduce = models2.every((m) => m.reduceMotion);
+      const busy = models2.some((m) => m.busy);
+      const flash = Math.max(...models2.map((m) => leg ? m.rejFlash : m.outFlash));
+      const phase = reduce ? 0 : this.ms / (busy ? 500 : 1100);
+      const angle = reduce ? 0 : Math.sin(phase) * (busy ? 4 : 1.2) + flash * (leg ? -6 : 7);
+      const color = leg ? Palette.Fail : Palette.Ok;
+      const anchor = leg ? Layout.Rej : Layout.Out;
+      const pivot = leg ? { x: -3, y: -7 } : { x: -17, y: 24 };
+      const c = this.ctx;
+      c.save();
+      c.translate(anchor.x, anchor.y);
+      const plate = (shape, fill, bright = false) => {
+        this.glowStroke(shape, color, bright ? 0.5 + flash : 0.2, bright ? 7 + flash * 10 : 4);
+        this.fillPath(shape, rgba(fill), rgba(bright ? color : "#7090a8", 0.95), bright ? 1.5 : 1.1, true);
+      };
+      this.lineSeg(leg ? -46 : -54, 0, pivot.x, pivot.y, rgba(color, 0.6), 2);
+      plate(leg ? ArmorShapes.Thigh : ArmorShapes.UpperArm, "#172635");
+      plate(leg ? ArmorShapes.ThighFacet : ArmorShapes.UpperFacet, "#38536b");
+      this.circle(pivot.x, pivot.y, 8, rgba("#0d1925"), rgba("#8da8bd"), 1.4);
+      this.circle(pivot.x, pivot.y, 3, rgba(color, 0.6 + flash * 0.4));
+      c.translate(pivot.x, pivot.y);
+      c.rotate(angle * Math.PI / 180);
+      c.translate(-pivot.x, -pivot.y);
+      plate(leg ? ArmorShapes.Shin : ArmorShapes.Forearm, "#152938", true);
+      plate(leg ? ArmorShapes.ShinFacet : ArmorShapes.ForeFacet, "#42657a");
+      plate(leg ? ArmorShapes.Boot : ArmorShapes.Fist, "#243e52", true);
+      if (leg) plate(ArmorShapes.BootFacet, "#55778d");
+      else this.fillPath(ArmorShapes.Fingers, null, rgba("#a9d9ec", 0.8), 1.2, true);
+      const u = reduce ? 0.5 : this.ms / (busy ? 1300 : 2600) % 1;
+      const px = leg ? -3 + 11 * u : -16 + 30 * u;
+      const py = leg ? -7 + 37 * u : 20 - 44 * u;
+      this.circle(px, py, 6, rgba(color, 0.16));
+      this.circle(px, py, 1.7, rgba("#e5ffff", 0.9));
+      c.restore();
+    }
     drawBubbles(m) {
       const h = 26, tail = 6, stackGap = 4;
       const stacked = /* @__PURE__ */ new Map();
       for (const b of m.bubbles.items) {
+        if (b.anchorKey === BubbleAnchors.Hub) continue;
         const pill = m.pillList.find((p) => p.key === b.anchorKey);
         const agent = pill ? void 0 : m.agents.find((a) => a.key === b.anchorKey);
+        if (!pill && m.agents.some((a) => a.key === b.anchorKey)) continue;
         if (!pill && !agent && !BubbleAnchors.isFixed(b.anchorKey)) continue;
         const nth = stacked.get(b.anchorKey) ?? 0;
         stacked.set(b.anchorKey, nth + 1);
@@ -1641,6 +1710,16 @@
             tailPath.moveTo(pill.right + 5, pill.y);
             tailPath.lineTo(bx + 1, pill.y - tail);
             tailPath.lineTo(bx + 1, pill.y + tail);
+            tailPath.closePath();
+          }
+        } else if (b.anchorKey === BubbleAnchors.Rejected) {
+          const cy = Layout.Rej.y + m.outputOffsetY;
+          bx = Layout.Rej.x - 105 - w;
+          by = cy - h / 2 + dy;
+          if (nth === 0) {
+            tailPath.moveTo(Layout.Rej.x - 52, cy);
+            tailPath.lineTo(bx + w - 1, cy - tail);
+            tailPath.lineTo(bx + w - 1, cy + tail);
             tailPath.closePath();
           }
         } else {
@@ -1668,7 +1747,7 @@
       for (const pt of m.particles) {
         const p = m.pillList.find((x) => x.key === pt.pillKey);
         if (!p) continue;
-        const path = pt.kind === "in" ? routeIn(p) : pt.kind === "out" ? routeOut(p) : routeRejected(p);
+        const path = pt.kind === "in" ? routeIn(p) : pt.kind === "out" ? routeOut(p, m.outputOffsetY) : routeRejected(p, m.outputOffsetY);
         for (let i = 8; i >= 0; i--) {
           const q = cubic(path, Math.min(1, Math.max(0, pt.t - i * 0.03)));
           const r = 4.6 - i * 0.4;
@@ -2031,13 +2110,14 @@
       c.restore();
     }
     // 右下摘要卡
-    drawSummary(m) {
+    drawSummary(models2) {
+      const m = models2[0];
       const x = 330, y = 190, w = 290, h = 92;
       this.fillRR(x, y, w, h, 10, rgba("#10141a", 0.92), rgba("#232a33"), 1);
       this.circle(x + 16, y + 18, 3, rgba(Palette.Ok));
       this.text(`WINDOW \xB7 ${m.windowMinutes} MIN`, x + 26, y + 18, 10, Palette.Sub, { mono: true });
-      this.text(`${m.stats.total} \u6B21\u547C\u53EB`, x + 16, y + 49, 30, Palette.Text, { bold: true });
-      this.text(`${m.agents.length} \u5B50\u4EE3\u7406 \xB7 ${m.pillList.length} \u5DE5\u5177\u7BC0\u9EDE \xB7 ${m.stats.running} \u57F7\u884C\u4E2D`, x + 16, y + 76, 11, Palette.Sub);
+      this.text(`${models2.reduce((n, m2) => n + m2.stats.total, 0)} \u6B21\u547C\u53EB`, x + 16, y + 49, 30, Palette.Text, { bold: true });
+      this.text(`${models2.reduce((n, m2) => n + m2.agents.length, 0)} \u5B50\u4EE3\u7406 \xB7 ${models2.reduce((n, m2) => n + m2.pillList.length, 0)} \u5DE5\u5177\u7BC0\u9EDE \xB7 ${models2.reduce((n, m2) => n + m2.stats.running, 0)} \u57F7\u884C\u4E2D`, x + 16, y + 76, 11, Palette.Sub);
     }
     // 底部日誌：最近 3 筆真實呼叫（螢幕座標，不隨縮放），屬於 output，最後才淡出
     drawLog(m) {
@@ -2188,6 +2268,10 @@
       const dt = lastDraw === 0 ? 0 : (ts - lastDraw) / 1e3;
       lastDraw = ts;
       const t0 = performance.now();
+      flowSceneRows(models).forEach((row, i) => {
+        row.model.outputOffsetY = -row.y;
+        row.model.outputSlotOffset = i;
+      });
       models.forEach((m) => m.tick(dt, Date.now()));
       renderer.renderScene(models, ts);
       renderStats.frames++;

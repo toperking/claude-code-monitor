@@ -1,10 +1,12 @@
-# Claude Code / Codex 本機監控（VS Code 外掛）
+# Claude/codex Monitor 本機監控（VS Code 外掛）
 
 在 VS Code 裡同時監看 Claude Code 與 Codex 的本機任務、工具與機甲狀態：
 
-- **同一張流程桌布**：Claude、Codex 各自的 session → AI 主節點 → 工具方塊 → 成功輸出／失敗，由上往下並列，共用縮放與拖曳平移。
-- **來源獨立**：主節點、模型、機甲、工具、忙碌狀態與統計分開；同名工具不會跨來源合併。移除用量卡片與固定額度提示列，讓流程圖使用更多空間。
-- **說明泡泡**：工具開始、失敗、讀寫 `.md` 文件、子代理出現、AI 開始執行／閒置、撞到額度上限。
+- **同一張流程桌布**：Claude、Codex 各自的 session → 大腦主節點／子代理 → 工具方塊，由上往下並列，共用縮放與拖曳平移。
+- **動態大腦**：人類大腦側面輪廓、腦迴、小腦與腦幹，搭配神經脈衝、掃描與呼吸光效；旁邊僅顯示實際模型名稱，例如 `GPT-6.1 SOL`。
+- **唯一一組裝甲手腳**：所有 AI 與子代理的結果都匯聚到同一組裝甲護臂／腿部，分別標示成功與失敗，關節與能量流具有動態科技風格；統計與摘要只顯示一次。
+- **來源獨立**：各來源的模型、機甲、工具與忙碌狀態分開，同名工具不跨來源合併。用量卡片與固定額度提示列已移除。
+- **說明泡泡**：工具開始、失敗、讀寫 `.md` 文件、撞到額度上限；大腦與子代理節點不再彈泡泡遮住模型名稱。
 - **機器人**：每個來源有自己的超級機器人——有工具在跑就飛到自己的方塊旁側身出拳，成功歡呼、失敗受創，AI 停下來就坐下；沒事時自己隨機活動（可關閉）。
 
 ## 隱私
@@ -17,8 +19,8 @@
 ## 使用
 
 - **活動列圖示**：左邊活動列（最左邊那排圖示）有一個機器人圖示，點它就會在側邊欄顯示監控。
-- **狀態列按鈕**：右下角的 `Claude Monitor` 也可以點，效果相同。
-- **在編輯區開啟（較大）**：側邊欄標題列右上角的「↗」按鈕，或命令面板（`Ctrl+Shift+P`）執行 **Claude Monitor: 在編輯區開啟（較大）**。側邊欄比較窄，流程圖會縮得很小；想看清楚就用這個。
+- **狀態列按鈕**：右下角的 `Claude/codex Monitor` 也可以點，效果相同。
+- **在編輯區開啟（較大）**：側邊欄標題列右上角的「↗」按鈕，或命令面板（`Ctrl+Shift+P`）執行 **Claude/codex Monitor: 在編輯區開啟（較大）**。側邊欄比較窄，流程圖會縮得很小；想看清楚就用這個。
 - 想要更寬的側邊欄：把活動列的圖示拖到右側的「次要側邊欄」或下方的面板區。
 
 Codex 依本機 rollout 的任務開始／完成／中止、工具呼叫／回傳更新狀態；子代理先顯示為獨立 session。沒有新活動超過 10 分鐘視為已結束，長時間無輸出的任務可能暫時被判為結束。Codex exec 內的巢狀工具只顯示逐字稿實際提供的外層呼叫。這是本機紀錄推算，無法觀察內部思考。
@@ -29,7 +31,7 @@ Codex 依本機 rollout 的任務開始／完成／中止、工具呼叫／回�
 
 從 [GitHub Releases](https://github.com/toperking/claude-code-monitor/releases) 下載 VSIX，執行 VS Code 命令「Extensions: Install from VSIX」，安裝後重新載入視窗。也可在 Open VSX 搜尋 `toperking.claude-code-monitor`。
 
-Windows 桌面版同一個 Release 附 `ClaudeMonitor-win-x64-0.4.0.zip`：解壓後執行 `ClaudeMonitor.Desktop.exe`，不需另外安裝 .NET。先關閉舊版（含通知區程式），再開新版。路徑以環境變數 `Monitor__ClaudeHome`、`Monitor__CodexHome` 覆寫，未設 Codex 路徑時採用 `CODEX_HOME` 或 `~/.codex`。桌面版也是唯讀本機紀錄，RAG 搬移需主動確認才執行。
+Windows 桌面版同一個 Release 附 `ClaudeMonitor-win-x64-0.5.0.zip`：解壓後執行 `ClaudeMonitor.Desktop.exe`，不需另外安裝 .NET。先關閉舊版（含通知區程式），再開新版。路徑以環境變數 `Monitor__ClaudeHome`、`Monitor__CodexHome` 覆寫，未設 Codex 路徑時採用 `CODEX_HOME` 或 `~/.codex`。桌面版也是唯讀本機紀錄，RAG 搬移需主動確認才執行。
 
 | 操作 | 效果 |
 | --- | --- |
@@ -55,7 +57,7 @@ Windows 桌面版同一個 Release 附 `ClaudeMonitor-win-x64-0.4.0.zip`：解�
 
 ### RAG 資料庫位置（選用）
 
-如果你用本機 RAG（MCP 伺服器，預設註冊名稱 `local-rag`），可以改變資料庫放的位置。**不用手打路徑**：按畫面底部的**齒輪按鈕**（或側邊欄標題列的齒輪、或命令 **Claude Monitor: RAG 資料庫設定**），選單裡：
+如果你用本機 RAG（MCP 伺服器，預設註冊名稱 `local-rag`），可以改變資料庫放的位置。**不用手打路徑**：按畫面底部的**齒輪按鈕**（或側邊欄標題列的齒輪、或命令 **Claude/codex Monitor: RAG 資料庫設定**），選單裡：
 
 - **選擇資料夾…**：跳出資料夾挑選器，點選資料夾後自動填入「資料夾\rag.db」（沿用原本的 .db 檔名）。這一步只是填路徑，**不會搬任何東西**。
 - **套用 RAG 資料庫位置…**：顯示計畫並要你確認，同意後才搬移並重新註冊。
@@ -69,7 +71,7 @@ Windows 桌面版同一個 Release 附 `ClaudeMonitor-win-x64-0.4.0.zip`：解�
 | `claudeMonitor.ragServerName` | `local-rag` | Claude Code 裡 RAG MCP 伺服器的名稱 |
 | `claudeMonitor.ragClaudeCommand` | `claude` | 重新註冊時執行的 claude 命令；找不到時填完整路徑 |
 
-執行「套用」（命令 **Claude Monitor: 套用 RAG 資料庫位置（搬移並重新註冊）**）時，它會先顯示「從哪搬到哪」並要你確認，然後：
+執行「套用」（命令 **Claude/codex Monitor: 套用 RAG 資料庫位置（搬移並重新註冊）**）時，它會先顯示「從哪搬到哪」並要你確認，然後：
 
 1. 把資料庫（含 `-wal`、`-shm` 與 `.bak` 備份資料夾）**剪下貼上**到新位置，舊位置不留檔案。跨磁碟時備份資料夾改用複製，核對檔案數與總大小一致才刪舊的；核對失敗會保留舊備份並提醒。
 2. 重新註冊 MCP 伺服器（`RAG_DB` 環境變數），其餘註冊內容原樣保留。
