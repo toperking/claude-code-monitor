@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { FlowModel } from '../src/core/model';
-import { providerSnapshot, snapshotProviders } from '../src/core/providerSnapshot';
+import { providerSnapshot, snapshotProviders, updateProviderOrder } from '../src/core/providerSnapshot';
 import { flowSceneRows } from '../src/core/flowSceneLayout';
 import { fakeCanvas, newRecorded } from './fakeCanvas';
 import { call, run, snap, SessionStatus, ToolResult } from './helpers';
@@ -21,6 +21,25 @@ function mixed() {
 }
 
 describe('independent provider flows', () => {
+  it('keeps GPT above Claude when Claude appears on a later snapshot', () => {
+    const first = mixed();
+    first.sessions = first.sessions.filter(s => s.provider === 'Codex');
+    first.recentToolCalls = first.recentToolCalls.filter(c => c.sessionId.startsWith('codex:'));
+    const order: string[] = [];
+    updateProviderOrder(first, order);
+    expect(order).toEqual(['Codex']);
+
+    const second = mixed();
+    second.sessions = second.sessions.filter(s => s.provider !== 'Gemini');
+    second.sessions[0].status = SessionStatus.Responding;
+    second.recentToolCalls = second.recentToolCalls.filter(c => c.sessionId !== 'gx');
+    updateProviderOrder(second, order);
+    expect(order).toEqual(['Codex', 'Claude']);
+    const models = order.map(provider => new FlowModel({ provider }));
+    const rows = flowSceneRows(models);
+    expect(rows[0].y).toBeLessThan(rows[1].y);
+  });
+
   it('discovers future providers and keeps agents and Claude quota in their own lanes', () => {
     const s = mixed();
     expect(snapshotProviders(s)).toEqual(['Claude', 'Codex', 'Gemini']);

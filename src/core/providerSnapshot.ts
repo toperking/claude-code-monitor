@@ -1,4 +1,4 @@
-import { MonitorSnapshot } from './types';
+import { isActive, MonitorSnapshot } from './types';
 
 export type AiProvider = string;
 
@@ -7,6 +7,15 @@ const source = (provider: AiProvider | undefined, sessionId: string): AiProvider
 
 export function snapshotProviders(snapshot: MonitorSnapshot): string[] {
   return [...new Set([...snapshot.sessions, ...snapshot.recentToolCalls].map(s => source(s.provider, s.sessionId)))];
+}
+
+/** Keep each provider in the row it first occupied; active providers take priority on the first snapshot. */
+export function updateProviderOrder(snapshot: MonitorSnapshot, appearanceOrder: string[]): void {
+  const providers = snapshotProviders(snapshot);
+  const active = providers.filter(provider => providerSnapshot(snapshot, provider).sessions.some(s => isActive(s.status)));
+  for (const provider of [...active, ...providers]) {
+    if (!appearanceOrder.includes(provider)) appearanceOrder.push(provider);
+  }
 }
 
 /** Isolate events before they reach the animation state machine. */

@@ -79,10 +79,28 @@
     }
   };
 
+  // src/core/types.ts
+  var SessionStatus = {
+    Responding: "\u56DE\u61C9\u4E2D",
+    RunningTool: "\u57F7\u884C\u5DE5\u5177\u4E2D",
+    Waiting: "\u7B49\u5F85\u6388\u6B0A/\u57F7\u884C\u4E2D",
+    Idle: "\u9592\u7F6E",
+    Ended: "\u5DF2\u7D50\u675F"
+  };
+  var isActive = (s) => s === SessionStatus.Responding || s === SessionStatus.RunningTool || s === SessionStatus.Waiting;
+  var ToolResult = { Running: "\u57F7\u884C\u4E2D", Ok: "\u6210\u529F", Failed: "\u5931\u6557", Interrupted: "\u672A\u5B8C\u6210/\u5DF2\u4E2D\u6B62" };
+
   // src/core/providerSnapshot.ts
   var source = (provider, sessionId) => sessionId.startsWith("codex:") ? "Codex" : provider?.trim() || "Claude";
   function snapshotProviders(snapshot) {
     return [...new Set([...snapshot.sessions, ...snapshot.recentToolCalls].map((s) => source(s.provider, s.sessionId)))];
+  }
+  function updateProviderOrder(snapshot, appearanceOrder) {
+    const providers = snapshotProviders(snapshot);
+    const active = providers.filter((provider) => providerSnapshot(snapshot, provider).sessions.some((s) => isActive(s.status)));
+    for (const provider of [...active, ...providers]) {
+      if (!appearanceOrder.includes(provider)) appearanceOrder.push(provider);
+    }
   }
   function providerSnapshot(snapshot, provider) {
     const sessions = new Map(snapshot.sessions.map((s) => [s.sessionId, source(s.provider, s.sessionId)]));
@@ -106,17 +124,6 @@
   function isRagWrite(action) {
     return action === "rag_index" || action === "rag_remove" || action === "rag_prune" || action === "rag_ingest_note";
   }
-
-  // src/core/types.ts
-  var SessionStatus = {
-    Responding: "\u56DE\u61C9\u4E2D",
-    RunningTool: "\u57F7\u884C\u5DE5\u5177\u4E2D",
-    Waiting: "\u7B49\u5F85\u6388\u6B0A/\u57F7\u884C\u4E2D",
-    Idle: "\u9592\u7F6E",
-    Ended: "\u5DF2\u7D50\u675F"
-  };
-  var isActive = (s) => s === SessionStatus.Responding || s === SessionStatus.RunningTool || s === SessionStatus.Waiting;
-  var ToolResult = { Running: "\u57F7\u884C\u4E2D", Ok: "\u6210\u529F", Failed: "\u5931\u6557", Interrupted: "\u672A\u5B8C\u6210/\u5DF2\u4E2D\u6B62" };
 
   // src/core/model.ts
   var FlowParticle = class {
@@ -2193,6 +2200,7 @@
   var model = new FlowModel({ provider: "Claude" });
   var codexModel = new FlowModel({ provider: "Codex" });
   var models = [model, codexModel];
+  var providerAppearanceOrder = [];
   var canvas = $("flow");
   var stage = $("stage");
   canvas.setAttribute("aria-label", "AI \u5171\u540C\u684C\u5E03\uFF1A\u5404\u4F86\u6E90\u7531\u4E0A\u5F80\u4E0B\u6392\u5217");
@@ -2237,7 +2245,9 @@
     }
   });
   function applySnapshot(s) {
-    for (const provider of snapshotProviders(s)) {
+    const providers = snapshotProviders(s);
+    updateProviderOrder(s, providerAppearanceOrder);
+    for (const provider of providers) {
       if (models.some((m) => m.providerLabel === provider)) continue;
       const next = new FlowModel({ provider, freeIdle: model.freeIdle });
       next.reduceMotion = model.reduceMotion;
@@ -2245,6 +2255,11 @@
       models.push(next);
       Object.assign(window.flowModels, { [provider]: next });
     }
+    models.sort((a, b) => {
+      const aOrder = providerAppearanceOrder.indexOf(a.providerLabel);
+      const bOrder = providerAppearanceOrder.indexOf(b.providerLabel);
+      return (aOrder < 0 ? Infinity : aOrder) - (bOrder < 0 ? Infinity : bOrder);
+    });
     models.forEach((m) => m.sync(s));
     renderStatus(s);
   }

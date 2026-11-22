@@ -3,7 +3,7 @@
 
 import { FlowModel } from '../core/model';
 import { flowSceneRows, sharedOutputY } from '../core/flowSceneLayout';
-import { snapshotProviders } from '../core/providerSnapshot';
+import { snapshotProviders, updateProviderOrder } from '../core/providerSnapshot';
 import { MonitorSnapshot, isActive } from '../core/types';
 import { FlowRenderer } from './render';
 
@@ -16,6 +16,7 @@ const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) 
 const model = new FlowModel({ provider: 'Claude' });
 const codexModel = new FlowModel({ provider: 'Codex' });
 const models = [model, codexModel];
+const providerAppearanceOrder: string[] = [];
 const canvas = $<HTMLCanvasElement>('flow');
 const stage = $('stage');
 canvas.setAttribute('aria-label', 'AI 共同桌布：各來源由上往下排列');
@@ -56,7 +57,9 @@ window.addEventListener('message', ev => {
 
 /** 供除錯與測試頁面直接餵快照。 */
 export function applySnapshot(s: MonitorSnapshot): void {
-  for (const provider of snapshotProviders(s)) {
+  const providers = snapshotProviders(s);
+  updateProviderOrder(s, providerAppearanceOrder);
+  for (const provider of providers) {
     if (models.some(m => m.providerLabel === provider)) continue;
     const next = new FlowModel({ provider, freeIdle: model.freeIdle });
     next.reduceMotion = model.reduceMotion;
@@ -64,6 +67,11 @@ export function applySnapshot(s: MonitorSnapshot): void {
     models.push(next);
     Object.assign((window as unknown as { flowModels: Record<string, FlowModel> }).flowModels, { [provider]: next });
   }
+  models.sort((a, b) => {
+    const aOrder = providerAppearanceOrder.indexOf(a.providerLabel);
+    const bOrder = providerAppearanceOrder.indexOf(b.providerLabel);
+    return (aOrder < 0 ? Infinity : aOrder) - (bOrder < 0 ? Infinity : bOrder);
+  });
   models.forEach(m => m.sync(s));
   renderStatus(s);
 }
