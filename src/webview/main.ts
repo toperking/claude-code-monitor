@@ -92,6 +92,9 @@ export function applySnapshot(s: MonitorSnapshot): void {
 (window as unknown as { flowModel: FlowModel; flowRenderer: FlowRenderer }).flowModel = model;
 (window as unknown as { flowRenderer: FlowRenderer }).flowRenderer = renderer; // 測試頁用
 
+// 設定按鈕：畫面本身不做任何設定，只通知擴充功能主機「使用者想開設定頁」
+document.getElementById('settings')?.addEventListener('click', () => vscode?.postMessage({ type: 'openSettings' })); // 測試用的 harness 頁沒有這顆按鈕
+
 $<HTMLInputElement>('bubbles').addEventListener('change', e => {
   model.bubbles.enabled = (e.target as HTMLInputElement).checked; // 只影響之後新產生的泡泡（已在畫面上的自然淡出）
 });

@@ -10,6 +10,9 @@ import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { TranscriptScanner } from './core/scanner';
 import { MonitorSnapshot } from './core/types';
+import { executeRagDb, planRagDb } from './ragdb/apply';
+import { realRagDbDeps } from './ragdb/node';
+import { dbFileInFolder } from './ragdb/plan';
 
 function claudeHome(): string {
   const configured = vscode.workspace.getConfiguration('claudeMonitor').get<string>('claudeHome', '').trim();
@@ -46,6 +49,7 @@ export class MonitorHub implements vscode.Disposable {
     const target: Target = { webview, visible };
     this.targets.add(target);
     const sub = webview.onDidReceiveMessage((m: { type?: string }) => {
+      if (m.type === 'openSettings') { void vscode.commands.executeCommand('claudeMonitor.ragMenu'); return; }
       if (m.type !== 'ready') return;
       this.sendConfig(target);
       if (this.last) void webview.postMessage({ type: 'snapshot', snapshot: this.last }); // 先給最近一份，不用等下一輪掃描
@@ -123,7 +127,12 @@ function html(webview: vscode.Webview, root: vscode.Uri): string {
   <div id="stage" class="stage"><canvas id="flow"></canvas></div>
   <footer>
     <span class="hint">點工具方塊展開最近 5 筆呼叫；滾輪縮放、拖曳平移、雙擊空白處還原。快取命中率 = 快取讀取 ÷ 全部輸入。「已用額度百分比」是 Anthropic 伺服器端資料，不在本機，所以不顯示。</span>
-    <label><input type="checkbox" id="bubbles" checked> 說明泡泡</label>
+    <span class="tools">
+      <button type="button" id="settings" class="icon-btn" title="RAG 資料庫設定" aria-label="RAG 資料庫設定">
+        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.03 1.56V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1.11-1.56 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.56-1.03H3a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 4.65 8.9a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34H9a1.7 1.7 0 0 0 1.03-1.56V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1.03 1.56 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87V9a1.7 1.7 0 0 0 1.56 1.03H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.51 1z"/></svg>
+      </button>
+      <label><input type="checkbox" id="bubbles" checked> 說明泡泡</label>
+    </span>
   </footer>
   <div id="status"></div>
 </div>
@@ -175,10 +184,104 @@ class EditorPanel {
   }
 }
 
+/**
+ * 設定頁的「套用 RAG 資料庫位置」：規劃 → 一定要使用者在確認視窗按下去 → 搬資料庫並重新註冊 local-rag。
+ * 這是整個擴充功能唯一會寫檔、會執行外部程式（claude）的地方，所以只在使用者明確按下確認時才動作。
+ */
+async function applyRagDb(log: vscode.OutputChannel): Promise<void> {
+  const cfg = vscode.workspace.getConfiguration('claudeMonitor');
+  const name = (cfg.get<string>('ragServerName', 'local-rag') ?? '').trim() || 'local-rag';
+  const input = cfg.get<string>('ragDbPath', '') ?? '';
+  const claude = (cfg.get<string>('ragClaudeCommand', 'claude') ?? '').trim() || 'claude';
+  const deps = realRagDbDeps(claude);
+
+  const planned = await planRagDb(name, input, deps);
+  if (!planned.ok) {
+    log.appendLine(`[RAG 資料庫] 無法套用：${planned.reason}`);
+    void vscode.window.showErrorMessage(`RAG 資料庫位置：${planned.reason}`);
+    return;
+  }
+  const p = planned.plan;
+  const confirm = '搬移並重新註冊';
+  const choice = await vscode.window.showWarningMessage(
+    `要把 RAG 資料庫搬到新位置，並重新註冊「${name}」嗎？`,
+    {
+      modal: true,
+      detail: [
+        `從：${p.oldPath}`,
+        `到：${p.newPath}`,
+        '',
+        p.hasDb ? '會把資料庫（含 -wal、-shm 與 .bak 備份資料夾）剪下貼上到新位置，舊位置不留檔案。' : '舊位置沒有資料庫檔案，只會更新註冊。',
+        `會執行 claude mcp remove／add-json 修改 Claude Code 的使用者設定（~/.claude.json）。`,
+        '資料庫使用中會拒絕並且什麼都不動；任何一步失敗都會還原。',
+      ].join('\n'),
+    },
+    confirm,
+  );
+  if (choice !== confirm) { log.appendLine('[RAG 資料庫] 使用者取消。'); return; }
+
+  const result = await vscode.window.withProgress(
+    { location: vscode.ProgressLocation.Notification, title: '正在搬移 RAG 資料庫並重新註冊…' },
+    () => executeRagDb(p, deps),
+  );
+  for (const line of result.messages) log.appendLine(`[RAG 資料庫] ${line}`);
+  const text = result.messages.join('\n');
+  if (result.ok) void vscode.window.showInformationMessage(text, { modal: false });
+  else void vscode.window.showErrorMessage(text, { modal: true });
+}
+
+/**
+ * 點一下就跳出「資料夾挑選器」：選好資料夾後，把「資料夾\rag.db」填進設定 claudeMonitor.ragDbPath，
+ * 再問要不要現在套用。只是填路徑，還沒有搬任何東西；套用另外有確認視窗。
+ */
+async function pickRagDbFolder(log: vscode.OutputChannel): Promise<void> {
+  const cfg = vscode.workspace.getConfiguration('claudeMonitor');
+  const current = (cfg.get<string>('ragDbPath', '') ?? '').trim();
+  const start = current !== '' && path.isAbsolute(current) ? path.dirname(current) : undefined;
+  const picked = await vscode.window.showOpenDialog({
+    canSelectFolders: true, canSelectFiles: false, canSelectMany: false,
+    openLabel: '選擇這個資料夾', title: '選擇 RAG 資料庫要放的資料夾',
+    ...(start ? { defaultUri: vscode.Uri.file(start) } : {}),
+  });
+  const folder = picked?.[0]?.fsPath;
+  if (!folder) return; // 使用者取消
+  const file = dbFileInFolder(folder, current);
+  await cfg.update('ragDbPath', file, vscode.ConfigurationTarget.Global);
+  log.appendLine(`[RAG 資料庫] 新位置設為 ${file}（尚未套用，沒有搬移任何東西）`);
+  const apply = '套用（搬移並重新註冊）';
+  const choice = await vscode.window.showInformationMessage(`RAG 資料庫的新位置：${file}\n還沒有搬移，要現在套用嗎？`, apply, '稍後');
+  if (choice === apply) await applyRagDb(log);
+}
+
+/** 設定按鈕（齒輪）點下去的選單：選資料夾、套用、開設定頁。 */
+async function ragMenu(log: vscode.OutputChannel): Promise<void> {
+  const cfg = vscode.workspace.getConfiguration('claudeMonitor');
+  const configured = (cfg.get<string>('ragDbPath', '') ?? '').trim();
+  type Item = vscode.QuickPickItem & { run: () => Thenable<unknown> | Promise<unknown> };
+  const items: Item[] = [
+    { label: '$(folder) 選擇資料夾…', description: '跳出資料夾挑選器，選完自動填入路徑', run: () => pickRagDbFolder(log) },
+    { label: '$(check) 套用 RAG 資料庫位置…', description: configured !== '' ? configured : '（尚未設定新位置）', detail: '先顯示計畫並要你確認，同意後才搬移資料庫並重新註冊', run: () => applyRagDb(log) },
+    { label: '$(settings-gear) 開啟設定頁', run: () => vscode.commands.executeCommand('claudeMonitor.openRagSettings') },
+  ];
+  const choice = await vscode.window.showQuickPick(items, { title: 'RAG 資料庫設定', placeHolder: '選擇要做什麼' });
+  await choice?.run();
+}
+
 export function activate(context: vscode.ExtensionContext): void {
   const hub = new MonitorHub();
+  const ragLog = vscode.window.createOutputChannel('Claude Monitor');
+  /** 命令的共同收尾：未預期的錯誤寫進輸出面板並提示，不讓命令靜悄悄失敗。 */
+  const guarded = (fn: () => Promise<void>) => (): Promise<void> => fn().catch(err => {
+    ragLog.appendLine(`[RAG 資料庫] 未預期的錯誤：${String(err)}`);
+    void vscode.window.showErrorMessage(`RAG 資料庫位置：發生未預期的錯誤（${err instanceof Error ? err.message : String(err)}）`);
+  });
   context.subscriptions.push(
     hub,
+    ragLog,
+    vscode.commands.registerCommand('claudeMonitor.openRagSettings', () => vscode.commands.executeCommand('workbench.action.openSettings', 'claudeMonitor.rag')),
+    vscode.commands.registerCommand('claudeMonitor.ragMenu', guarded(() => ragMenu(ragLog))),
+    vscode.commands.registerCommand('claudeMonitor.pickRagDbFolder', guarded(() => pickRagDbFolder(ragLog))),
+    vscode.commands.registerCommand('claudeMonitor.applyRagDb', guarded(() => applyRagDb(ragLog))),
     vscode.window.registerWebviewViewProvider(SidebarProvider.viewType, new SidebarProvider(hub, context), { webviewOptions: { retainContextWhenHidden: true } }),
     vscode.commands.registerCommand('claudeMonitor.show', () => vscode.commands.executeCommand('claudeMonitor.view.focus')),
     vscode.commands.registerCommand('claudeMonitor.open', () => EditorPanel.show(hub, context)),

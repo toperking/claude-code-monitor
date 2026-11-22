@@ -2085,6 +2085,7 @@
   window.applySnapshot = applySnapshot;
   window.flowModel = model;
   window.flowRenderer = renderer;
+  document.getElementById("settings")?.addEventListener("click", () => vscode?.postMessage({ type: "openSettings" }));
   $("bubbles").addEventListener("change", (e) => {
     model.bubbles.enabled = e.target.checked;
   });

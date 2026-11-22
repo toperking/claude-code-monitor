@@ -16,6 +16,15 @@ const h = vi.hoisted(() => {
     statusItems: [] as Array<{ text: string; command?: string; shown: boolean }>,
     config: { claudeHome: '', refreshSeconds: 1, bubbles: true, freeIdle: true } as Record<string, unknown>,
     configListeners: [] as Array<(e: { affectsConfiguration: (s: string) => boolean }) => void>,
+    // 模擬使用者在對話框裡的選擇
+    pickedFolder: undefined as string | undefined,
+    quickChoice: undefined as string | undefined,
+    infoChoice: undefined as string | undefined,
+    updates: [] as Array<[string, unknown]>,
+    openDialogs: [] as Array<{ defaultUri?: { fsPath: string }; canSelectFolders?: boolean; canSelectFiles?: boolean }>,
+    quickPicks: [] as string[][],
+    infos: [] as string[],
+    errors: [] as string[],
   };
   return state;
 });
@@ -23,13 +32,28 @@ const h = vi.hoisted(() => {
 vi.mock('vscode', () => ({
   ViewColumn: { Beside: -2 },
   StatusBarAlignment: { Right: 2 },
-  Uri: { joinPath: (_base: unknown, ...parts: string[]) => ({ toString: () => 'vscode-webview://x/' + parts.join('/') }) },
+  ConfigurationTarget: { Global: 1 },
+  Uri: {
+    joinPath: (_base: unknown, ...parts: string[]) => ({ toString: () => 'vscode-webview://x/' + parts.join('/') }),
+    file: (p: string) => ({ fsPath: p }),
+  },
   commands: {
     registerCommand: (id: string, fn: () => void) => { h.commands.set(id, fn); return { dispose() { /* 測試用 */ } }; },
     executeCommand: (id: string) => { h.executed.push(id); return Promise.resolve(); },
   },
   window: {
     registerWebviewViewProvider: (id: string, provider: { resolveWebviewView: (v: unknown) => void }) => { h.viewProviders.set(id, provider); return { dispose() { /* 測試用 */ } }; },
+    createOutputChannel: () => ({ appendLine() { /* 測試用 */ }, dispose() { /* 測試用 */ } }),
+    showOpenDialog: async (opts: { defaultUri?: { fsPath: string }; canSelectFolders?: boolean; canSelectFiles?: boolean }) => {
+      h.openDialogs.push(opts);
+      return h.pickedFolder ? [{ fsPath: h.pickedFolder }] : undefined;
+    },
+    showQuickPick: async (items: Array<{ label: string }>) => {
+      h.quickPicks.push(items.map(i => i.label));
+      return items.find(i => h.quickChoice !== undefined && i.label.includes(h.quickChoice));
+    },
+    showInformationMessage: async (msg: string) => { h.infos.push(msg); return h.infoChoice; },
+    showErrorMessage: async (msg: string) => { h.errors.push(msg); return undefined; },
     createStatusBarItem: () => {
       const it = { text: '', tooltip: '', command: undefined as string | undefined, shown: false, show() { it.shown = true; } };
       h.statusItems.push(it);
@@ -61,7 +85,10 @@ vi.mock('vscode', () => ({
     },
   },
   workspace: {
-    getConfiguration: () => ({ get: <T>(key: string, def: T): T => (key in h.config ? (h.config[key] as T) : def) }),
+    getConfiguration: () => ({
+      get: <T>(key: string, def: T): T => (key in h.config ? (h.config[key] as T) : def),
+      update: async (key: string, value: unknown) => { h.updates.push([key, value]); h.config[key] = value; },
+    }),
     onDidChangeConfiguration: (cb: (e: { affectsConfiguration: (s: string) => boolean }) => void) => { h.configListeners.push(cb); return { dispose() { /* 測試用 */ } }; },
   },
 }));
@@ -90,6 +117,8 @@ beforeEach(() => {
   home = fs.mkdtempSync(path.join(os.tmpdir(), 'ccm-ext-'));
   h.commands.clear(); h.executed.length = 0; h.viewProviders.clear(); h.panels.length = 0; h.statusItems.length = 0; h.configListeners.length = 0;
   h.config = { claudeHome: home, refreshSeconds: 1, bubbles: true, freeIdle: true };
+  h.pickedFolder = undefined; h.quickChoice = undefined; h.infoChoice = undefined;
+  h.updates.length = 0; h.openDialogs.length = 0; h.quickPicks.length = 0; h.infos.length = 0; h.errors.length = 0;
 });
 afterEach(() => {
   for (const p of h.panels) if (!p.disposed) p.dispose();
@@ -123,6 +152,68 @@ describe('擴充功能主機', () => {
     h.commands.get('claudeMonitor.open')!();
     expect(h.panels).toHaveLength(1);
     expect(h.panels[0].revealed).toBe(1);
+  });
+
+  it('底部有設定按鈕（提示文字與無障礙標籤齊全）；點下去畫面送 openSettings，主機開啟設定選單', () => {
+    activate(ctx() as never);
+    h.commands.get('claudeMonitor.open')!();
+    expect(h.panels[0].html).toMatch(/<button[^>]*id="settings"[^>]*title="RAG 資料庫設定"[^>]*aria-label="RAG 資料庫設定"/);
+    expect(h.executed).not.toContain('claudeMonitor.ragMenu');
+    h.panels[0].receive({ type: 'openSettings' });
+    expect(h.executed).toContain('claudeMonitor.ragMenu');
+  });
+
+  it('設定選單：有「選擇資料夾」「套用」「開啟設定頁」三項；選「選擇資料夾」就跳出資料夾挑選器', async () => {
+    activate(ctx() as never);
+    h.quickChoice = '選擇資料夾';
+    await (h.commands.get('claudeMonitor.ragMenu')!() as unknown as Promise<void>);
+    expect(h.quickPicks[0].join('|')).toMatch(/選擇資料夾.*套用.*開啟設定頁/);
+    expect(h.openDialogs).toHaveLength(1);
+    expect(h.openDialogs[0]).toMatchObject({ canSelectFolders: true, canSelectFiles: false }); // 只能選資料夾
+  });
+
+  it('選資料夾：把「資料夾\\rag.db」填進設定，只是填路徑，不搬任何東西、不報錯', async () => {
+    activate(ctx() as never);
+    h.pickedFolder = path.join(os.tmpdir(), 'RagData');
+    await (h.commands.get('claudeMonitor.pickRagDbFolder')!() as unknown as Promise<void>);
+    expect(h.updates).toEqual([['ragDbPath', path.join(h.pickedFolder, 'rag.db')]]);
+    expect(h.infos[0]).toContain('還沒有搬移');
+    expect(h.errors).toEqual([]);
+  });
+
+  it('選資料夾：沿用設定裡原本的 .db 檔名，挑選器從原本的資料夾開始', async () => {
+    activate(ctx() as never);
+    const old = path.join(os.tmpdir(), 'old', 'my.db');
+    h.config.ragDbPath = old;
+    h.pickedFolder = path.join(os.tmpdir(), 'RagData');
+    await (h.commands.get('claudeMonitor.pickRagDbFolder')!() as unknown as Promise<void>);
+    expect(h.updates).toEqual([['ragDbPath', path.join(h.pickedFolder, 'my.db')]]);
+    expect(h.openDialogs[0].defaultUri?.fsPath).toBe(path.dirname(old));
+  });
+
+  it('選資料夾：按取消（沒選）什麼都不改', async () => {
+    activate(ctx() as never);
+    h.pickedFolder = undefined;
+    await (h.commands.get('claudeMonitor.pickRagDbFolder')!() as unknown as Promise<void>);
+    expect(h.updates).toEqual([]);
+    expect(h.infos).toEqual([]);
+  });
+
+  it('RAG 資料庫的命令與設定項目都有註冊，而且設定本身不會觸發任何動作', () => {
+    activate(ctx() as never);
+    for (const id of ['claudeMonitor.ragMenu', 'claudeMonitor.pickRagDbFolder', 'claudeMonitor.openRagSettings', 'claudeMonitor.applyRagDb']) {
+      expect(h.commands.has(id)).toBe(true);
+    }
+    const pkg = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as {
+      contributes: { commands: Array<{ command: string }>; configuration: { properties: Record<string, { default: unknown; markdownDescription?: string }> } };
+    };
+    const ids = pkg.contributes.commands.map(c => c.command);
+    expect(ids).toEqual(expect.arrayContaining(['claudeMonitor.ragMenu', 'claudeMonitor.pickRagDbFolder', 'claudeMonitor.openRagSettings', 'claudeMonitor.applyRagDb']));
+    expect(pkg.contributes.configuration.properties['claudeMonitor.ragDbPath'].markdownDescription).toContain('command:claudeMonitor.pickRagDbFolder'); // 設定頁裡有可點的「選擇資料夾」連結
+    const props = pkg.contributes.configuration.properties;
+    expect(props['claudeMonitor.ragDbPath'].default).toBe(''); // 預設空白＝不搬、不改
+    expect(props['claudeMonitor.ragServerName'].default).toBe('local-rag');
+    expect(props['claudeMonitor.ragClaudeCommand'].default).toBe('claude');
   });
 
   it('畫面回報 ready 後：先送設定，再送掃描到的快照（只讀本機逐字稿）', async () => {

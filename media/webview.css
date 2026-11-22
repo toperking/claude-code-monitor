@@ -37,6 +37,14 @@ footer { flex: none; display: flex; justify-content: space-between; align-items:
 footer .hint { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 footer label { flex: none; display: inline-flex; align-items: center; gap: 4px; cursor: pointer; color: var(--text); }
 #status { flex: none; color: var(--sub); font-size: 11.5px; padding: 0 2px; }
+footer .tools { flex: none; display: inline-flex; align-items: center; gap: 10px; }
+.icon-btn { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; padding: 0;
+  background: transparent; color: var(--sub); border: 1px solid var(--line); border-radius: 6px; cursor: pointer;
+  transition: color .12s, border-color .12s, background-color .12s; }
+.icon-btn:hover { color: var(--accent); border-color: var(--accent); background: #121b26; }
+.icon-btn:active { background: #16222f; }
+.icon-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+@media (prefers-reduced-motion: reduce) { .icon-btn { transition: none; } }
 
 /* 窄的側邊欄（活動列圖示點開的那個）：卡片改成直排、隱藏說明文字 */
 @media (max-width: 560px) {

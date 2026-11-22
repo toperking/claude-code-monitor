@@ -2,7 +2,7 @@
   "name": "claude-code-monitor",
   "displayName": "Claude Code 本機監控",
   "description": "即時流程圖與用量彙總：只讀取本機 ~/.claude 的逐字稿，不連網、不上傳任何資料。",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "publisher": "toperking",
   "license": "MIT",
   "repository": {
@@ -40,6 +40,23 @@
         "command": "claudeMonitor.open",
         "title": "Claude Monitor: 在編輯區開啟（較大）",
         "icon": "$(link-external)"
+      },
+      {
+        "command": "claudeMonitor.ragMenu",
+        "title": "Claude Monitor: RAG 資料庫設定（選資料夾、套用）",
+        "icon": "$(gear)"
+      },
+      {
+        "command": "claudeMonitor.pickRagDbFolder",
+        "title": "Claude Monitor: 選擇 RAG 資料庫的資料夾…"
+      },
+      {
+        "command": "claudeMonitor.openRagSettings",
+        "title": "Claude Monitor: 開啟 RAG 設定頁"
+      },
+      {
+        "command": "claudeMonitor.applyRagDb",
+        "title": "Claude Monitor: 套用 RAG 資料庫位置（搬移並重新註冊）"
       }
     ],
     "configuration": {
@@ -73,6 +90,24 @@
           "minimum": 10,
           "maximum": 60,
           "description": "流程圖每秒最多重畫幾張。調低可以減少 CPU／GPU 負擔；畫面完全靜止時（沒有 AI 在執行）自動降到每秒一張。"
+        },
+        "claudeMonitor.ragDbPath": {
+          "type": "string",
+          "default": "",
+          "order": 100,
+          "markdownDescription": "**RAG 資料庫的新位置**（完整路徑，例如 `D:\\RagData\\rag.db`；留空＝預設的 `%LOCALAPPDATA%\\LocalRag\\rag.db`）。\n\n不想手打路徑？按 [選擇資料夾…](command:claudeMonitor.pickRagDbFolder) 跳出資料夾挑選器，選好會自動填入。\n\n只改這個設定**不會**有任何動作；要執行請按 [套用 RAG 資料庫位置](command:claudeMonitor.applyRagDb)。套用時會先顯示計畫並請你確認，然後：① 把資料庫（含備份）**搬**過去（剪下貼上，不留舊檔）；② 用 `claude mcp` 重新註冊 local-rag，加上 `RAG_DB`。資料庫使用中會拒絕並且什麼都不動；任何一步失敗都會還原。"
+        },
+        "claudeMonitor.ragServerName": {
+          "type": "string",
+          "default": "local-rag",
+          "order": 101,
+          "description": "Claude Code 裡 RAG MCP 伺服器的名稱（使用者範圍）。"
+        },
+        "claudeMonitor.ragClaudeCommand": {
+          "type": "string",
+          "default": "claude",
+          "order": 102,
+          "description": "重新註冊時執行的 claude 命令。找不到時請填完整路徑，例如 C:\\Users\\你\\.local\\bin\\claude.exe。"
         }
       }
     },
@@ -98,6 +133,11 @@
       "view/title": [
         {
           "command": "claudeMonitor.open",
+          "when": "view == claudeMonitor.view",
+          "group": "navigation"
+        },
+        {
+          "command": "claudeMonitor.ragMenu",
           "when": "view == claudeMonitor.view",
           "group": "navigation"
         }
