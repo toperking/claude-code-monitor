@@ -338,7 +338,7 @@ export class FlowRenderer {
       this.fillRR(Layout.ChipX, y, Layout.ChipW, Layout.ChipH, 7, rgba('#12161c'), rgba(col, active ? 0.9 : 0.35), 1.2);
       const dotR = 3.2 + (active && !m.reduceMotion ? 0.5 * Math.sin(this.ms / Breath) : 0);
       this.circle(Layout.ChipX + 12, y + Layout.ChipH / 2, dotR, rgba(active ? col : Palette.Dim));
-      this.text('SESSION ' + s.sessionId.slice(0, 4).toUpperCase(), Layout.ChipX + 24, y + Layout.ChipH / 2, 11, Palette.Text, { mono: true });
+      this.text((s.provider === 'Codex' ? 'CODEX ' + s.sessionId.slice(6, 10) : 'CLAUDE ' + s.sessionId.slice(0, 4)).toUpperCase(), Layout.ChipX + 24, y + Layout.ChipH / 2, 11, Palette.Text, { mono: true });
       this.circle(Layout.ChipX + Layout.ChipW, y + Layout.ChipH / 2, 3, rgba(col));
     });
   }
@@ -899,7 +899,7 @@ export class FlowRenderer {
     const tiny = this.w < 260; // 更窄（窄面板）：LIVE 只剩一個小圓點、不畫菱形圖示
     let tx = 18;
     if (!tiny) tx += this.text('◈', tx, 24, 13, Palette.Agent) + 10;
-    tx += this.text('CLAUDE FLOW', tx, 24, 12, Palette.Text, { bold: true }) + 10;
+    tx += this.text('AI FLOW', tx, 24, 12, Palette.Text, { bold: true }) + 10;
     if (narrow) {
       const s = m.stats;
       const dot = m.isLive ? Palette.Ok : Palette.Warn;
@@ -914,7 +914,7 @@ export class FlowRenderer {
       this.text(line, 18, 46, 10.5, Palette.Sub, { alpha: m.sink });
       return;
     }
-    this.text('本機 ~/.claude', tx, 24, 12, '#6b7685');
+    this.text('本機 Claude / Codex', tx, 24, 12, '#6b7685');
 
     let x = this.w - 18;
     if (m.modelText.length > 0) {

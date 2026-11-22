@@ -33,7 +33,7 @@ function renderUsage(windows: UsageWindowDto[]): void {
         <span class="bar"><i style="width:${Math.max(2, Math.round(m.percent))}%"></i></span>
         <span class="pct">${pct(m.percent)}</span></div>`).join('');
     return `<div class="card">
-      <div class="card-head"><span class="label">${esc(w.label)}</span>
+      <div class="card-head"><span class="label">Claude · ${esc(w.label)}</span>
         <span class="meta">快取命中率 <b>${hit}</b> · <b>${w.totalTokens.toLocaleString('en-US')}</b> tokens</span></div>
       ${hasData ? rows : '<div class="empty">這段時間沒有資料</div>'}
     </div>`;
@@ -57,7 +57,7 @@ function describeLimitHit(hit: LimitHitDto | null, now: number): string {
 function renderStatus(s: MonitorSnapshot): void {
   const notice = $('notice');
   const limit = describeLimitHit(s.lastLimitHit, s.at);
-  const home = s.claudeHomeFound ? '' : `找不到 .claude 資料夾：${s.claudeHome}`;
+  const home = !s.claudeHomeFound && !s.codexHomeFound ? `找不到 .claude 資料夾：${s.claudeHome}` : '';
   const text = [home, limit].filter(Boolean).join('\n');
   notice.hidden = text.length === 0;
   notice.textContent = text;
@@ -65,9 +65,10 @@ function renderStatus(s: MonitorSnapshot): void {
 
   const active = s.sessions.filter(x => isActive(x.status)).length;
   const activeAgents = s.agents.filter(a => isActive(a.status)).length;
-  $('status').textContent = s.claudeHomeFound
-    ? `已讀取本機 .claude  ·  活躍 ${active} / ${s.sessions.length} 個 session  ·  ${activeAgents} 個活躍子代理  ·  ${s.recentToolCalls.length} 筆工具呼叫`
-    : '尚未找到 .claude 資料夾';
+  const sources = [s.claudeHomeFound ? 'Claude' : '', s.codexHomeFound ? 'Codex' : ''].filter(Boolean).join(' + ');
+  $('status').textContent = sources
+    ? `已讀取本機 ${sources}  ·  活躍 ${active} / ${s.sessions.length} 個 session  ·  ${activeAgents} 個活躍子代理  ·  ${s.recentToolCalls.length} 筆工具呼叫（用量僅 Claude）`
+    : '尚未找到本機逐字稿資料夾';
 }
 
 // ── 訊息 ───────────────────────────────────────────────────────────────────

@@ -1,15 +1,15 @@
-# Claude Code 本機監控（VS Code 外掛）
+# Claude Code / Codex 本機監控（VS Code 外掛）
 
-在 VS Code 裡即時看 Claude Code 正在做什麼：
+在 VS Code 裡同時監看 Claude Code 與 Codex 的本機任務、工具與機甲狀態：
 
 - **即時流程圖**：session → AI 主節點 → 工具方塊（MCP 依伺服器合併、子代理各自一群）→ 成功輸出／失敗。
-- **用量彙總**：近 5 小時、近 7 天的快取命中率、token 總量、模型占比。
+- **Claude 用量彙總**：近 5 小時、近 7 天的快取命中率、token 總量、模型占比（尚不含 Codex）。
 - **說明泡泡**：工具開始、失敗、讀寫 `.md` 文件、子代理出現、AI 開始執行／閒置、撞到額度上限。
 - **機器人**：一台超級機器人代表「AI 現在在做什麼」——有工具在跑就飛到那個方塊旁側身出拳，成功歡呼、失敗受創，AI 停下來就坐下；沒事時自己隨機活動（可關閉）。
 
 ## 隱私
 
-- 監控本身**只讀取**本機 `~/.claude/projects/**/*.jsonl`（可在設定改路徑），**不連網**、不上傳。
+- 監控本身**只讀取**本機 `~/.claude/projects/**/*.jsonl` 與 `~/.codex/sessions/**/*.jsonl`（可在設定改路徑），**不連網**、不上傳。Codex 路徑預設優先採用 `CODEX_HOME`。
 - 平常**不寫入任何檔案、不執行外部程式**。唯一的例外是下面的「RAG 資料庫位置」功能：只有你**主動執行「套用 RAG 資料庫位置」命令、並在跳出的確認視窗按下同意**，才會搬移資料庫檔案，並執行 `claude mcp remove／add-json` 修改 Claude Code 的使用者設定（`~/.claude.json`）。只改設定頁的欄位不會有任何動作。
 - 為了這個功能，擴充功能會**唯讀**讀取 `~/.claude.json` 裡你指定名稱（預設 `local-rag`）的那一筆 MCP 註冊，其餘內容不讀取、不記錄。
 - 泡泡與日誌會顯示工具命令與檔案路徑的前幾十個字，螢幕分享時請留意。
@@ -20,6 +20,14 @@
 - **狀態列按鈕**：右下角的 `Claude Monitor` 也可以點，效果相同。
 - **在編輯區開啟（較大）**：側邊欄標題列右上角的「↗」按鈕，或命令面板（`Ctrl+Shift+P`）執行 **Claude Monitor: 在編輯區開啟（較大）**。側邊欄比較窄，流程圖會縮得很小；想看清楚就用這個。
 - 想要更寬的側邊欄：把活動列的圖示拖到右側的「次要側邊欄」或下方的面板區。
+
+Codex 依本機 rollout 的任務開始／完成／中止、工具呼叫／回傳更新狀態；子代理先顯示為獨立 session。沒有新活動超過 10 分鐘視為已結束，長時間無輸出的任務可能暫時被判為結束。用量與額度卡片僅計 Claude，Codex exec 內的巢狀工具只顯示逐字稿實際提供的外層呼叫。這是本機紀錄推算，無法觀察內部思考。
+
+## 安裝
+
+從 [GitHub Releases](https://github.com/toperking/claude-code-monitor/releases) 下載 VSIX，執行 VS Code 命令「Extensions: Install from VSIX」，安裝後重新載入視窗。也可在 Open VSX 搜尋 `toperking.claude-code-monitor`。
+
+Windows 桌面版同一個 Release 附 `ClaudeMonitor-win-x64-0.3.0.zip`：解壓後執行 `ClaudeMonitor.Desktop.exe`，不需另外安裝 .NET。先關閉舊版（含通知區程式），再開新版。路徑以環境變數 `Monitor__ClaudeHome`、`Monitor__CodexHome` 覆寫，未設 Codex 路徑時採用 `CODEX_HOME` 或 `~/.codex`。桌面版也是唯讀本機紀錄，RAG 搬移需主動確認才執行。
 
 | 操作 | 效果 |
 | --- | --- |
@@ -34,6 +42,8 @@
 | 設定 | 預設 | 說明 |
 | --- | --- | --- |
 | `claudeMonitor.claudeHome` | （空） | Claude Code 資料夾；留空＝使用者目錄下的 `.claude` |
+| `claudeMonitor.codexEnabled` | true | 同時監看 Codex；關閉後不掃描也不顯示 Codex |
+| `claudeMonitor.codexHome` | （空） | Codex 資料夾（內含 sessions）；留空依序採用 CODEX_HOME、~/.codex |
 | `claudeMonitor.refreshSeconds` | 2 | 重新掃描逐字稿的間隔（秒） |
 | `claudeMonitor.bubbles` | true | 顯示說明泡泡 |
 | `claudeMonitor.freeIdle` | true | 機器人沒事做時自己隨機活動；關閉＝只依真實事件動作 |

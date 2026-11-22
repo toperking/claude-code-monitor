@@ -116,7 +116,7 @@ const posted = (type: string): Array<Record<string, unknown>> =>
 beforeEach(() => {
   home = fs.mkdtempSync(path.join(os.tmpdir(), 'ccm-ext-'));
   h.commands.clear(); h.executed.length = 0; h.viewProviders.clear(); h.panels.length = 0; h.statusItems.length = 0; h.configListeners.length = 0;
-  h.config = { claudeHome: home, refreshSeconds: 1, bubbles: true, freeIdle: true };
+  h.config = { claudeHome: home, codexHome: path.join(home, 'codex'), refreshSeconds: 1, bubbles: true, freeIdle: true };
   h.pickedFolder = undefined; h.quickChoice = undefined; h.infoChoice = undefined;
   h.updates.length = 0; h.openDialogs.length = 0; h.quickPicks.length = 0; h.infos.length = 0; h.errors.length = 0;
 });
@@ -126,6 +126,22 @@ afterEach(() => {
 });
 
 describe('擴充功能主機', () => {
+  it('同時掃描 Claude 與 Codex，並可在設定停用 Codex', async () => {
+    writeTranscript(home, [toolLine()]);
+    const dir = path.join(home, 'codex', 'sessions'); fs.mkdirSync(dir, { recursive: true });
+    const record = (type: string, payload: unknown): string => JSON.stringify({ type, payload, timestamp: new Date().toISOString() }) + '\n';
+    fs.writeFileSync(path.join(dir, 'rollout.jsonl'), record('session_meta', { id: SID })
+      + record('event_msg', { type: 'task_started', turn_id: 't' })
+      + record('response_item', { type: 'function_call', call_id: 't1', name: 'exec_command', arguments: '{"cmd":"ls"}' }));
+    activate(ctx() as never); h.commands.get('claudeMonitor.open')!(); h.panels[0].receive({ type: 'ready' }); await flush();
+    const snap = posted('snapshot').at(-1)!.snapshot as { sessions: Array<{ sessionId: string }>; recentToolCalls: Array<{ toolUseId: string }>; codexHomeFound?: boolean };
+    expect(snap.codexHomeFound).toBe(true); expect(snap.sessions.map(s => s.sessionId)).toEqual(expect.arrayContaining([SID, 'codex:' + SID]));
+    expect(new Set(snap.recentToolCalls.map(c => c.toolUseId)).size).toBe(2);
+    h.config.codexEnabled = false;
+    for (const cb of h.configListeners) cb({ affectsConfiguration: () => true }); await flush();
+    const disabled = posted('snapshot').at(-1)!.snapshot as typeof snap;
+    expect(disabled.sessions.map(s => s.sessionId)).toEqual([SID]); expect(disabled.codexHomeFound).toBeUndefined();
+  });
   it('啟動時註冊命令、側邊欄畫面並顯示狀態列按鈕', () => {
     activate(ctx() as never);
     expect(h.commands.has('claudeMonitor.open')).toBe(true);

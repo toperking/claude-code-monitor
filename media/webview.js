@@ -98,7 +98,7 @@
     Ended: "\u5DF2\u7D50\u675F"
   };
   var isActive = (s) => s === SessionStatus.Responding || s === SessionStatus.RunningTool || s === SessionStatus.Waiting;
-  var ToolResult = { Running: "\u57F7\u884C\u4E2D", Ok: "\u6210\u529F", Failed: "\u5931\u6557" };
+  var ToolResult = { Running: "\u57F7\u884C\u4E2D", Ok: "\u6210\u529F", Failed: "\u5931\u6557", Interrupted: "\u672A\u5B8C\u6210/\u5DF2\u4E2D\u6B62" };
 
   // src/core/model.ts
   var FlowParticle = class {
@@ -457,7 +457,7 @@
         total++;
         if (c.result === ToolResult.Ok) ok++;
         else if (c.result === ToolResult.Failed) fail++;
-        else running++;
+        else if (c.result === ToolResult.Running) running++;
         let p = this.pills.get(key) ?? null;
         if (!p) p = this.makePill(key, name, owner);
         if (!p) continue;
@@ -467,7 +467,11 @@
         const done = c.result !== ToolResult.Running;
         if (c.result === ToolResult.Ok) p.ok++;
         else if (c.result === ToolResult.Failed) p.fail++;
-        else p.running++;
+        else if (c.result === ToolResult.Running) p.running++;
+        if (c.result === ToolResult.Interrupted) {
+          this.calls.set(c.toolUseId, { pill: p.key, result: c.result });
+          continue;
+        }
         const rec = this.calls.get(c.toolUseId);
         if (!rec) {
           this.calls.set(c.toolUseId, { pill: p.key, result: c.result });
@@ -1412,7 +1416,7 @@
         this.fillRR(Layout.ChipX, y, Layout.ChipW, Layout.ChipH, 7, rgba("#12161c"), rgba(col, active ? 0.9 : 0.35), 1.2);
         const dotR = 3.2 + (active && !m.reduceMotion ? 0.5 * Math.sin(this.ms / Breath) : 0);
         this.circle(Layout.ChipX + 12, y + Layout.ChipH / 2, dotR, rgba(active ? col : Palette.Dim));
-        this.text("SESSION " + s.sessionId.slice(0, 4).toUpperCase(), Layout.ChipX + 24, y + Layout.ChipH / 2, 11, Palette.Text, { mono: true });
+        this.text((s.provider === "Codex" ? "CODEX " + s.sessionId.slice(6, 10) : "CLAUDE " + s.sessionId.slice(0, 4)).toUpperCase(), Layout.ChipX + 24, y + Layout.ChipH / 2, 11, Palette.Text, { mono: true });
         this.circle(Layout.ChipX + Layout.ChipW, y + Layout.ChipH / 2, 3, rgba(col));
       });
     }
@@ -1967,7 +1971,7 @@
       const tiny = this.w < 260;
       let tx = 18;
       if (!tiny) tx += this.text("\u25C8", tx, 24, 13, Palette.Agent) + 10;
-      tx += this.text("CLAUDE FLOW", tx, 24, 12, Palette.Text, { bold: true }) + 10;
+      tx += this.text("AI FLOW", tx, 24, 12, Palette.Text, { bold: true }) + 10;
       if (narrow) {
         const s2 = m.stats;
         const dot = m.isLive ? Palette.Ok : Palette.Warn;
@@ -1981,7 +1985,7 @@
         this.text(line, 18, 46, 10.5, Palette.Sub, { alpha: m.sink });
         return;
       }
-      this.text("\u672C\u6A5F ~/.claude", tx, 24, 12, "#6b7685");
+      this.text("\u672C\u6A5F Claude / Codex", tx, 24, 12, "#6b7685");
       let x = this.w - 18;
       if (m.modelText.length > 0) {
         const wd = this.measure(m.modelText, 11, true, true) + 20;
@@ -2030,7 +2034,7 @@
         <span class="bar"><i style="width:${Math.max(2, Math.round(m.percent))}%"></i></span>
         <span class="pct">${pct(m.percent)}</span></div>`).join("");
       return `<div class="card">
-      <div class="card-head"><span class="label">${esc(w.label)}</span>
+      <div class="card-head"><span class="label">Claude \xB7 ${esc(w.label)}</span>
         <span class="meta">\u5FEB\u53D6\u547D\u4E2D\u7387 <b>${hit}</b> \xB7 <b>${w.totalTokens.toLocaleString("en-US")}</b> tokens</span></div>
       ${hasData ? rows : '<div class="empty">\u9019\u6BB5\u6642\u9593\u6C92\u6709\u8CC7\u6599</div>'}
     </div>`;
@@ -2055,14 +2059,15 @@
   function renderStatus(s) {
     const notice = $("notice");
     const limit = describeLimitHit(s.lastLimitHit, s.at);
-    const home = s.claudeHomeFound ? "" : `\u627E\u4E0D\u5230 .claude \u8CC7\u6599\u593E\uFF1A${s.claudeHome}`;
+    const home = !s.claudeHomeFound && !s.codexHomeFound ? `\u627E\u4E0D\u5230 .claude \u8CC7\u6599\u593E\uFF1A${s.claudeHome}` : "";
     const text = [home, limit].filter(Boolean).join("\n");
     notice.hidden = text.length === 0;
     notice.textContent = text;
     notice.className = "notice" + (home ? " warn" : "");
     const active = s.sessions.filter((x) => isActive(x.status)).length;
     const activeAgents = s.agents.filter((a) => isActive(a.status)).length;
-    $("status").textContent = s.claudeHomeFound ? `\u5DF2\u8B80\u53D6\u672C\u6A5F .claude  \xB7  \u6D3B\u8E8D ${active} / ${s.sessions.length} \u500B session  \xB7  ${activeAgents} \u500B\u6D3B\u8E8D\u5B50\u4EE3\u7406  \xB7  ${s.recentToolCalls.length} \u7B46\u5DE5\u5177\u547C\u53EB` : "\u5C1A\u672A\u627E\u5230 .claude \u8CC7\u6599\u593E";
+    const sources = [s.claudeHomeFound ? "Claude" : "", s.codexHomeFound ? "Codex" : ""].filter(Boolean).join(" + ");
+    $("status").textContent = sources ? `\u5DF2\u8B80\u53D6\u672C\u6A5F ${sources}  \xB7  \u6D3B\u8E8D ${active} / ${s.sessions.length} \u500B session  \xB7  ${activeAgents} \u500B\u6D3B\u8E8D\u5B50\u4EE3\u7406  \xB7  ${s.recentToolCalls.length} \u7B46\u5DE5\u5177\u547C\u53EB\uFF08\u7528\u91CF\u50C5 Claude\uFF09` : "\u5C1A\u672A\u627E\u5230\u672C\u6A5F\u9010\u5B57\u7A3F\u8CC7\u6599\u593E";
   }
   var maxFps = 30;
   window.addEventListener("message", (ev) => {

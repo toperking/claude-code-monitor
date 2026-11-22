@@ -1,8 +1,8 @@
 {
   "name": "claude-code-monitor",
-  "displayName": "Claude Code 本機監控",
-  "description": "即時流程圖與用量彙總：只讀取本機 ~/.claude 的逐字稿，不連網、不上傳任何資料。",
-  "version": "0.2.2",
+  "displayName": "Claude Code / Codex 本機監控",
+  "description": "Claude Code 與 Codex 即時流程圖、工具狀態及 Claude 用量彙總：唯讀本機逐字稿，不連網、不上傳。",
+  "version": "0.3.0",
   "publisher": "toperking",
   "license": "MIT",
   "repository": {
@@ -62,6 +62,16 @@
     "configuration": {
       "title": "Claude Monitor",
       "properties": {
+        "claudeMonitor.codexEnabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "同時監看本機 Codex 任務與工具狀態（唯讀；用量統計仍僅含 Claude）。"
+        },
+        "claudeMonitor.codexHome": {
+          "type": "string",
+          "default": "",
+          "description": "Codex 資料夾，內含 sessions。留空使用 CODEX_HOME，未設定則使用 ~/.codex。"
+        },
         "claudeMonitor.claudeHome": {
           "type": "string",
           "default": "",

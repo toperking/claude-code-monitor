@@ -9,6 +9,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { TranscriptScanner } from './core/scanner';
+import { CodexScanner } from './core/codexScanner';
 import { MonitorSnapshot } from './core/types';
 import { executeRagDb, planRagDb } from './ragdb/apply';
 import { realRagDbDeps } from './ragdb/node';
@@ -19,12 +20,18 @@ function claudeHome(): string {
   return configured.length > 0 ? configured : path.join(os.homedir(), '.claude');
 }
 
+function codexHome(): string {
+  const configured = vscode.workspace.getConfiguration('claudeMonitor').get<string>('codexHome', '').trim();
+  return configured || process.env.CODEX_HOME || path.join(os.homedir(), '.codex');
+}
+
 interface Target { webview: vscode.Webview; visible: () => boolean }
 
 /** 掃描器與計時器的唯一擁有者；所有畫面（側邊欄、編輯區面板）都向它登記。 */
 export class MonitorHub implements vscode.Disposable {
   private scanner: TranscriptScanner;
   private home: string;
+  private codex = new CodexScanner(codexHome());
   private timer: NodeJS.Timeout | undefined;
   private refreshing = false;
   private last: MonitorSnapshot | undefined;
@@ -38,6 +45,8 @@ export class MonitorHub implements vscode.Disposable {
       if (!e.affectsConfiguration('claudeMonitor')) return;
       const home = claudeHome();
       if (home !== this.home) { this.home = home; this.scanner = new TranscriptScanner(home); this.last = undefined; }
+      const codex = codexHome();
+      if (codex !== this.codex.home) { this.codex = new CodexScanner(codex); this.last = undefined; }
       for (const t of this.targets) this.sendConfig(t);
       this.restartTimer();
       void this.refresh();
@@ -91,7 +100,14 @@ export class MonitorHub implements vscode.Disposable {
     this.refreshing = true;
     try {
       await this.scanner.refresh();
-      this.last = this.scanner.snapshot();
+      const enabled = vscode.workspace.getConfiguration('claudeMonitor').get<boolean>('codexEnabled', true);
+      if (enabled) await this.codex.refresh();
+      const base = this.scanner.snapshot();
+      this.last = enabled ? {
+        ...base, codexHome: this.codex.home, codexHomeFound: this.codex.found,
+        sessions: [...base.sessions, ...this.codex.snapshotSessions(base.at)].sort((a, b) => b.lastActivity - a.lastActivity),
+        recentToolCalls: [...base.recentToolCalls, ...this.codex.snapshotCalls()].sort((a, b) => b.time - a.time).slice(0, 500),
+      } : base;
       for (const t of visible) await t.webview.postMessage({ type: 'snapshot', snapshot: this.last });
     } catch (err) {
       console.error('[claude-monitor] 掃描失敗', err);
@@ -118,7 +134,7 @@ function html(webview: vscode.Webview, root: vscode.Uri): string {
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource}; script-src 'nonce-${nonce}'; img-src ${webview.cspSource} data:;">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="stylesheet" href="${uri('webview.css')}">
-<title>Claude 本機監控</title>
+<title>Claude / Codex 本機監控</title>
 </head>
 <body>
 <div id="app">
@@ -161,7 +177,7 @@ class EditorPanel {
 
   static show(hub: MonitorHub, context: vscode.ExtensionContext): void {
     if (EditorPanel.current) { EditorPanel.current.panel.reveal(); return; }
-    const panel = vscode.window.createWebviewPanel('claudeMonitor', 'Claude 本機監控', vscode.ViewColumn.Beside, {
+    const panel = vscode.window.createWebviewPanel('claudeMonitor', 'Claude / Codex 本機監控', vscode.ViewColumn.Beside, {
       enableScripts: true,
       retainContextWhenHidden: true, // 切到別的分頁再回來，不用重建畫面與動畫狀態
       localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, 'media')],
@@ -290,7 +306,7 @@ export function activate(context: vscode.ExtensionContext): void {
   // 狀態列右下角的小按鈕：點一下顯示側邊欄
   const item = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 90);
   item.text = '$(pulse) Claude Monitor';
-  item.tooltip = '顯示 Claude Code 本機監控（只讀取本機 ~/.claude，不連網）';
+  item.tooltip = '顯示 Claude Code / Codex 本機監控（只讀取本機 Claude / Codex 逐字稿，不連網）';
   item.command = 'claudeMonitor.show';
   item.show();
   context.subscriptions.push(item);

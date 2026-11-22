@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.0
+- 新增 Codex 本機監控：唯讀 `CODEX_HOME/sessions/**/*.jsonl`（預設 `~/.codex`），與 Claude 同時顯示。
+- 依 task_started／task_complete／turn_aborted 與 function/custom tool call/output 更新工作中、待命、工具結果與機甲；完成任務立即停止忙碌，中止且未回傳的呼叫標示「未完成/已中止」，不計入成功或執行中。
+- Claude／Codex session 顯示來源，Codex session 與工具 ID 加來源命名空間避免碰撞；無活動逾 10 分鐘視為已結束，避免異常結束留下永久忙碌。
+- 新增 `claudeMonitor.codexEnabled`（預設啟用）、`claudeMonitor.codexHome`。Codex 子代理 rollout 暫以獨立 session 顯示；僅顯示本機已寫入的事件，掃描有延遲，無法判斷內部思考狀態。
+- 用量與額度卡片明確標示僅 Claude；本版不合併 Codex token／額度，避免不同記錄格式重複計數。
+- Windows 桌面版同步支援，`Monitor__CodexHome` 可覆寫路徑，否則沿用 `CODEX_HOME` 或 `~/.codex`。提供 self-contained win-x64 ZIP。
+
 ## 0.2.2
 - 擴充功能本身的功能沒有變動。配合本機 RAG 資料庫的新結構（結構版本 2：索引層 `sources`、連結層 `chunks`、詳細層 `chunk_text`／`chunk_vectors`，詞彙與向量引擎共用）更新說明。
 - 新結構的資料庫檔案名稱與位置沒有變，所以「RAG 資料庫位置」功能（搬移、重新註冊）照常使用。舊結構的資料庫不會自動轉換，開啟時 RAG 伺服器會直接報錯，請先備份、移走後重新索引。

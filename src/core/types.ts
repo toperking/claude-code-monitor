@@ -12,9 +12,10 @@ export const SessionStatus = {
 export const isActive = (s: string): boolean =>
   s === SessionStatus.Responding || s === SessionStatus.RunningTool || s === SessionStatus.Waiting;
 
-export const ToolResult = { Running: '執行中', Ok: '成功', Failed: '失敗' } as const;
+export const ToolResult = { Running: '執行中', Ok: '成功', Failed: '失敗', Interrupted: '未完成/已中止' } as const;
 
 export interface SessionDto {
+  provider?: 'Claude' | 'Codex';
   sessionId: string;
   model: string;
   status: string;
@@ -22,6 +23,7 @@ export interface SessionDto {
 }
 
 export interface ToolCallDto {
+  provider?: 'Claude' | 'Codex';
   toolUseId: string;
   sessionId: string;
   time: number;
@@ -66,6 +68,8 @@ export interface LimitHitDto {
 }
 
 export interface MonitorSnapshot {
+  codexHome?: string;
+  codexHomeFound?: boolean;
   at: number;
   claudeHome: string;
   claudeHomeFound: boolean;

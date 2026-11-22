@@ -380,7 +380,7 @@ export class FlowModel {
       total++;
       if (c.result === ToolResult.Ok) ok++;
       else if (c.result === ToolResult.Failed) fail++;
-      else running++;
+      else if (c.result === ToolResult.Running) running++;
       let p = this.pills.get(key) ?? null;
       if (!p) p = this.makePill(key, name, owner);
       if (!p) continue;
@@ -390,7 +390,12 @@ export class FlowModel {
       const done = c.result !== ToolResult.Running;
       if (c.result === ToolResult.Ok) p.ok++;
       else if (c.result === ToolResult.Failed) p.fail++;
-      else p.running++;
+      else if (c.result === ToolResult.Running) p.running++;
+
+      if (c.result === ToolResult.Interrupted) {
+        this.calls.set(c.toolUseId, { pill: p.key, result: c.result });
+        continue;
+      }
 
       const rec = this.calls.get(c.toolUseId);
       if (!rec) {
