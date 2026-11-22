@@ -1,4 +1,6 @@
+import { constants as fsConstants } from 'node:fs';
 import * as fsp from 'node:fs/promises';
+import * as path from 'node:path';
 
 /** 搬移資料庫會用到的檔案操作；全部經過這個介面，測試才能注入「改名失敗」「複製中斷」這類故障。 */
 export interface FsOps {
@@ -8,6 +10,34 @@ export interface FsOps {
   copyFile(from: string, to: string): Promise<void>;
   size(p: string): Promise<number>;
   unlink(p: string): Promise<void>;
+  /** 整個資料夾（含子資料夾）複製到不存在的目的地，不覆蓋。 */
+  copyDirectory(from: string, to: string): Promise<void>;
+  removeDirectory(p: string): Promise<void>;
+  /** 資料夾的「檔案數:總位元組」摘要，複製後用來核對兩邊一致。 */
+  directorySummary(p: string): Promise<string>;
+}
+
+// 只用 Node 18 就有的基本 API（外掛支援 VS Code 1.85，內建 Node 18）：fs.cp 與 Dirent.parentPath 在那邊不可靠。
+async function summarize(dir: string): Promise<string> {
+  let files = 0, bytes = 0;
+  const walk = async (d: string): Promise<void> => {
+    for (const entry of await fsp.readdir(d, { withFileTypes: true })) {
+      const full = path.join(d, entry.name);
+      if (entry.isDirectory()) await walk(full);
+      else if (entry.isFile()) { files++; bytes += (await fsp.stat(full)).size; }
+    }
+  };
+  await walk(dir);
+  return `${files}:${bytes}`;
+}
+
+async function copyTree(from: string, to: string): Promise<void> {
+  await fsp.mkdir(to); // 不加 recursive：目的地已存在就失敗，不覆蓋
+  for (const entry of await fsp.readdir(from, { withFileTypes: true })) {
+    const [a, b] = [path.join(from, entry.name), path.join(to, entry.name)];
+    if (entry.isDirectory()) await copyTree(a, b);
+    else if (entry.isFile()) await fsp.copyFile(a, b, fsConstants.COPYFILE_EXCL);
+  }
 }
 
 export const realFs: FsOps = {
@@ -17,6 +47,9 @@ export const realFs: FsOps = {
   copyFile: (a, b) => fsp.copyFile(a, b),
   size: async p => (await fsp.stat(p)).size,
   unlink: p => fsp.unlink(p),
+  copyDirectory: copyTree,
+  removeDirectory: p => fsp.rm(p, { recursive: true }),
+  directorySummary: summarize,
 };
 
 export interface MoveResult {
@@ -53,6 +86,32 @@ async function relocate(fs: FsOps, from: string, to: string): Promise<void> {
     throw e;
   }
   await fs.unlink(from);
+}
+
+/**
+ * 搬資料夾：同磁碟改名；不同磁碟（EXDEV）就「複製、核對檔案數與總大小、一致才刪舊的」。
+ * 複製途中失敗或核對不一致：清掉不完整的新資料夾、保留舊的，丟例外。
+ * 核對一致但舊的刪不掉：新的已完整，舊的留著，丟 StaleSourceError 讓呼叫端提醒使用者手動刪。
+ */
+export class StaleSourceError extends Error {}
+
+async function relocateDirectory(fs: FsOps, from: string, to: string): Promise<void> {
+  try {
+    await fs.rename(from, to);
+    return;
+  } catch (e) {
+    if (code(e) !== 'EXDEV') throw e;
+  }
+  try {
+    await fs.copyDirectory(from, to);
+    const [a, b] = [await fs.directorySummary(from), await fs.directorySummary(to)];
+    if (a !== b) throw new Error(`複製後內容不一致（來源 ${a}、目的地 ${b}）`);
+  } catch (e) {
+    await fs.removeDirectory(to).catch(() => undefined);
+    throw e;
+  }
+  try { await fs.removeDirectory(from); }
+  catch (e) { throw new StaleSourceError(`已複製到新位置，但舊的資料夾刪不掉（${message(e)}）：${from}`); }
 }
 
 /**
@@ -97,8 +156,11 @@ export async function moveDatabase(oldPath: string, newPath: string, fs: FsOps):
     if (await fs.exists(newBak)) {
       warnings.push(`備份資料夾沒有搬：目的地已有 ${newBak}。舊的還在 ${oldBak}。`);
     } else {
-      try { await fs.rename(oldBak, newBak); backupMoved = true; moved.push(newBak); }
-      catch (e) { warnings.push(`備份資料夾沒有搬（${message(e)}）。舊的還在 ${oldBak}。`); }
+      try { await relocateDirectory(fs, oldBak, newBak); backupMoved = true; moved.push(newBak); }
+      catch (e) {
+        if (e instanceof StaleSourceError) { backupMoved = true; moved.push(newBak); warnings.push(e.message); } // 新的完整了，只是舊的要手動刪
+        else warnings.push(`備份資料夾沒有搬（${message(e)}）。舊的還在 ${oldBak}。`);
+      }
     }
   }
 
@@ -106,7 +168,11 @@ export async function moveDatabase(oldPath: string, newPath: string, fs: FsOps):
     moved,
     warnings,
     undo: async () => {
-      if (backupMoved) await fs.rename(newBak, oldBak);
+      if (backupMoved) {
+        // 舊的資料夾還在（刪不掉的情況）：新的是多的副本，刪掉新的就等於還原
+        if (await fs.exists(oldBak)) await fs.removeDirectory(newBak);
+        else await relocateDirectory(fs, newBak, oldBak);
+      }
       for (const s of [...present].reverse()) await relocate(fs, newPath + s, oldPath + s);
     },
   };

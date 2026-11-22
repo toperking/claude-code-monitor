@@ -18,11 +18,18 @@ const err = (code: string): Error => Object.assign(new Error(code), { code });
 const ls = (d: string): string[] => readdirSync(d).sort();
 
 /** 在真的檔案系統上包一層：可以讓指定的改名／複製失敗。 */
-function faulty(opts: { rename?: (a: string, b: string) => Error | null; copy?: (a: string, b: string) => Error | null } = {}): FsOps {
+function faulty(opts: {
+  rename?: (a: string, b: string) => Error | null;
+  copy?: (a: string, b: string) => Error | null;
+  removeDir?: (p: string) => Error | null;
+  summary?: (p: string) => string | undefined;
+} = {}): FsOps {
   return {
     ...realFs,
     rename: async (a, b) => { const e = opts.rename?.(a, b); if (e) throw e; return realFs.rename(a, b); },
     copyFile: async (a, b) => { const e = opts.copy?.(a, b); if (e) throw e; return realFs.copyFile(a, b); },
+    removeDirectory: async p => { const e = opts.removeDir?.(p); if (e) throw e; return realFs.removeDirectory(p); },
+    directorySummary: async p => opts.summary?.(p) ?? realFs.directorySummary(p),
   };
 }
 
@@ -149,6 +156,53 @@ describe('搬移資料庫', () => {
     const r = await moveDatabase(from, to, realFs);
     expect(r.warnings.join('')).toContain('備份資料夾沒有搬');
     expect(existsSync(from + '.bak')).toBe(true);
+  });
+
+  describe('跨磁碟時的備份資料夾（資料夾不能直接改名搬過去）', () => {
+    const crossBak = (to: string) => ({ rename: (_a: string, b: string) => (b.endsWith('.bak') ? err('EXDEV') : null) });
+
+    it('改用複製（含子資料夾），核對一致才刪舊的，沒有警告', async () => {
+      const { from, to } = setup();
+      mkdirSync(path.join(from + '.bak', 'sub'));
+      file(path.join(from + '.bak', 'sub', 'b2.db'), 'BACKUP2');
+      const r = await moveDatabase(from, to, faulty(crossBak(to)));
+      expect(readFileSync(path.join(to + '.bak', 'b1.db'), 'utf8')).toBe('BACKUP');
+      expect(readFileSync(path.join(to + '.bak', 'sub', 'b2.db'), 'utf8')).toBe('BACKUP2');
+      expect(existsSync(from + '.bak')).toBe(false);
+      expect(r.warnings).toEqual([]);
+      expect(r.moved).toContain(to + '.bak');
+    });
+
+    it('核對不一致：清掉不完整的新資料夾、保留舊備份、只警告；資料庫本身仍搬成功', async () => {
+      const { from, to } = setup();
+      const r = await moveDatabase(from, to, faulty({ ...crossBak(to), summary: p => (p === to + '.bak' ? '0:0' : undefined) }));
+      expect(readFileSync(to, 'utf8')).toBe('DB-CONTENT');
+      expect(existsSync(to + '.bak')).toBe(false);
+      expect(readFileSync(path.join(from + '.bak', 'b1.db'), 'utf8')).toBe('BACKUP');
+      expect(r.warnings.join('')).toContain('備份資料夾沒有搬');
+    });
+
+    it('複製完整但舊資料夾刪不掉：新的保留、舊的也還在，警告使用者手動刪；undo 只刪多的那份', async () => {
+      const { from, to } = setup();
+      const r = await moveDatabase(from, to, faulty({ ...crossBak(to), removeDir: p => (p === from + '.bak' ? new Error('檔案被占用') : null) }));
+      expect(readFileSync(path.join(to + '.bak', 'b1.db'), 'utf8')).toBe('BACKUP');
+      expect(existsSync(from + '.bak')).toBe(true);
+      expect(r.warnings.join('')).toContain('刪不掉');
+      await r.undo();
+      expect(readFileSync(path.join(from + '.bak', 'b1.db'), 'utf8')).toBe('BACKUP');
+      expect(existsSync(to + '.bak')).toBe(false);
+    });
+
+    it('undo：跨磁碟複製過去的備份資料夾，也能複製回來', async () => {
+      const { from, to } = setup();
+      const fs2 = faulty(crossBak(to));
+      const r = await moveDatabase(from, to, fs2);
+      expect(existsSync(from + '.bak')).toBe(false);
+      await r.undo();
+      expect(readFileSync(path.join(from + '.bak', 'b1.db'), 'utf8')).toBe('BACKUP');
+      expect(existsSync(to + '.bak')).toBe(false);
+      expect(readFileSync(from, 'utf8')).toBe('DB-CONTENT');
+    });
   });
 
   it('舊位置沒有資料庫：丟 MoveError', async () => {
