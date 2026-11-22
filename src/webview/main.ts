@@ -3,7 +3,7 @@
 
 import { FlowModel } from '../core/model';
 import { flowSceneRows, OutputAnchor, sharedOutputY } from '../core/flowSceneLayout';
-import { snapshotProviders, updateProviderOrder } from '../core/providerSnapshot';
+import { providerSnapshot, snapshotProviders, updateProviderOrder } from '../core/providerSnapshot';
 import { MonitorSnapshot, isActive } from '../core/types';
 import { FlowRenderer } from './render';
 
@@ -25,7 +25,7 @@ renderer.model = model;
 
 const motion = window.matchMedia('(prefers-reduced-motion: reduce)');
 models.forEach(m => { m.reduceMotion = motion.matches; });
-motion.addEventListener('change', () => { models.forEach(m => { m.reduceMotion = motion.matches; }); });
+motion.addEventListener('change', () => { model.reduceMotion = motion.matches; models.forEach(m => { m.reduceMotion = motion.matches; }); });
 
 function renderStatus(s: MonitorSnapshot): void {
   const notice = $('notice');
@@ -49,8 +49,8 @@ window.addEventListener('message', ev => {
   const msg = ev.data as { type: string; snapshot?: MonitorSnapshot; bubbles?: boolean; freeIdle?: boolean; maxFps?: number };
   if (msg.type === 'snapshot' && msg.snapshot) applySnapshot(msg.snapshot);
   else if (msg.type === 'config') {
-    if (typeof msg.bubbles === 'boolean') { models.forEach(m => { m.bubbles.enabled = msg.bubbles!; }); $<HTMLInputElement>('bubbles').checked = msg.bubbles; }
-    if (typeof msg.freeIdle === 'boolean') models.forEach(m => { m.freeIdle = msg.freeIdle!; });
+    if (typeof msg.bubbles === 'boolean') { model.bubbles.enabled = msg.bubbles; models.forEach(m => { m.bubbles.enabled = msg.bubbles!; }); $<HTMLInputElement>('bubbles').checked = msg.bubbles; }
+    if (typeof msg.freeIdle === 'boolean') { model.freeIdle = msg.freeIdle; models.forEach(m => { m.freeIdle = msg.freeIdle!; }); }
     if (typeof msg.maxFps === 'number') maxFps = Math.min(60, Math.max(10, msg.maxFps));
   }
 });
@@ -60,12 +60,25 @@ export function applySnapshot(s: MonitorSnapshot): void {
   const providers = snapshotProviders(s);
   updateProviderOrder(s, providerAppearanceOrder);
   for (const provider of providers) {
-    if (models.some(m => m.providerLabel === provider)) continue;
-    const next = new FlowModel({ provider, freeIdle: model.freeIdle });
-    next.reduceMotion = model.reduceMotion;
-    next.bubbles.enabled = model.bubbles.enabled;
-    models.push(next);
-    Object.assign((window as unknown as { flowModels: Record<string, FlowModel> }).flowModels, { [provider]: next });
+    const sessions = providerSnapshot(s, provider).sessions;
+    const distinctModels = [...new Set(sessions.filter(x => isActive(x.status)).concat(sessions).map(x => x.model))];
+    for (const name of distinctModels) {
+      if (models.some(m => m.providerLabel === provider && m.modelKey === name)) continue;
+      const existing = models.find(m => m.providerLabel === provider && m.modelKey === undefined);
+      if (existing) { existing.bindModel(name); continue; }
+      const next = new FlowModel({ provider, modelKey: name, freeIdle: model.freeIdle });
+      next.reduceMotion = model.reduceMotion;
+      next.bubbles.enabled = model.bubbles.enabled;
+      models.push(next);
+    }
+    if (!models.some(m => m.providerLabel === provider)) {
+      const next = new FlowModel({ provider, freeIdle: model.freeIdle });
+      next.reduceMotion = model.reduceMotion;
+      next.bubbles.enabled = model.bubbles.enabled;
+      models.push(next);
+    }
+    const primary = models.find(m => m.providerLabel === provider)!;
+    Object.assign((window as unknown as { flowModels: Record<string, FlowModel> }).flowModels, { [provider]: primary });
   }
   models.sort((a, b) => {
     const aOrder = providerAppearanceOrder.indexOf(a.providerLabel);
@@ -73,6 +86,12 @@ export function applySnapshot(s: MonitorSnapshot): void {
     return (aOrder < 0 ? Infinity : aOrder) - (bOrder < 0 ? Infinity : bOrder);
   });
   models.forEach(m => m.sync(s));
+  // A switched-away model keeps its brain while fading, then releases its row.
+  for (let i = models.length - 1; i >= 0; i--) {
+    const m = models[i];
+    if (m.modelKey !== undefined && m.sessions.length === 0 && !m.animating &&
+        !providerSnapshot(s, m.providerLabel, m.modelKey).sessions.length) models.splice(i, 1);
+  }
   renderStatus(s);
 }
 (window as unknown as { applySnapshot: typeof applySnapshot; flowModel: FlowModel }).applySnapshot = applySnapshot;
@@ -84,6 +103,7 @@ Object.assign(window, { flowModels: { Claude: model, Codex: codexModel } });
 document.getElementById('settings')?.addEventListener('click', () => vscode?.postMessage({ type: 'openSettings' })); // 測試用的 harness 頁沒有這顆按鈕
 
 $<HTMLInputElement>('bubbles').addEventListener('change', e => {
+  model.bubbles.enabled = (e.target as HTMLInputElement).checked;
   models.forEach(m => { m.bubbles.enabled = (e.target as HTMLInputElement).checked; });
 });
 

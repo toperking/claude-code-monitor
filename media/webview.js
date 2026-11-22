@@ -102,14 +102,15 @@
       if (!appearanceOrder.includes(provider)) appearanceOrder.push(provider);
     }
   }
-  function providerSnapshot(snapshot, provider) {
+  function providerSnapshot(snapshot, provider, model2) {
     const sessions = new Map(snapshot.sessions.map((s) => [s.sessionId, source(s.provider, s.sessionId)]));
     const sessionSource = (id) => sessions.get(id) ?? source(void 0, id);
+    const modelSessions = new Set(snapshot.sessions.filter((s) => source(s.provider, s.sessionId) === provider && s.model === model2).map((s) => s.sessionId));
     return {
       ...snapshot,
-      sessions: snapshot.sessions.filter((s) => source(s.provider, s.sessionId) === provider),
-      recentToolCalls: snapshot.recentToolCalls.filter((c) => (sessions.has(c.sessionId) ? sessionSource(c.sessionId) : source(c.provider, c.sessionId)) === provider),
-      agents: snapshot.agents.filter((a) => sessionSource(a.sessionId) === provider),
+      sessions: snapshot.sessions.filter((s) => source(s.provider, s.sessionId) === provider && (model2 === void 0 || s.model === model2)),
+      recentToolCalls: snapshot.recentToolCalls.filter((c) => (sessions.has(c.sessionId) ? sessionSource(c.sessionId) : source(c.provider, c.sessionId)) === provider && (model2 === void 0 || modelSessions.has(c.sessionId))),
+      agents: snapshot.agents.filter((a) => sessionSource(a.sessionId) === provider && (model2 === void 0 || modelSessions.has(a.sessionId))),
       usageWindows: provider === "Claude" ? snapshot.usageWindows : [],
       lastLimitHit: provider === "Claude" ? snapshot.lastLimitHit : null
     };
@@ -404,6 +405,13 @@
     get providerLabel() {
       return this.o.provider ?? "AI";
     }
+    get modelKey() {
+      return this.o.modelKey;
+    }
+    bindModel(model2) {
+      if (this.o.modelKey !== void 0 && this.o.modelKey !== model2) throw new Error("A brain cannot switch models");
+      this.o.modelKey = model2;
+    }
     outputOffsetY = 0;
     outputSlotOffset = 0;
     get freeIdle() {
@@ -441,7 +449,7 @@
     }
     // ── 資料同步 ───────────────────────────────────────────────────────────
     sync(d) {
-      if (this.o.provider) d = providerSnapshot(d, this.o.provider);
+      if (this.o.provider) d = providerSnapshot(d, this.o.provider, this.o.modelKey);
       const now = d.at;
       const windowMs = this.o.windowMinutes * 6e4;
       const inWin = d.recentToolCalls.filter((c) => c.result === ToolResult.Running || now - c.time < windowMs);
@@ -458,7 +466,7 @@
       this.lastActivity = stamps.length > 0 ? Math.max(...stamps) : null;
       this.sessionsList = d.sessions.filter((s) => isActive(s.status) || live.has(s.sessionId)).slice(0, 4);
       const lead = d.sessions.find((s) => isActive(s.status)) ?? d.sessions[0];
-      this.modelText = lead ? formatModel(lead.model) : "";
+      this.modelText = lead ? formatModel(lead.model) : this.o.modelKey ? formatModel(this.o.modelKey) : "";
       const visibleAgents = d.agents.filter((a) => isActive(a.status) || inWin.some((c) => c.sessionId === a.sessionId && c.agentId === a.agentId));
       const agentKeys = new Set(visibleAgents.map((a) => agentKey(a.sessionId, a.agentId)));
       for (const key of [...this.agentMap.keys()]) if (!agentKeys.has(key)) this.agentMap.delete(key);
@@ -2241,6 +2249,7 @@
     m.reduceMotion = motion.matches;
   });
   motion.addEventListener("change", () => {
+    model.reduceMotion = motion.matches;
     models.forEach((m) => {
       m.reduceMotion = motion.matches;
     });
@@ -2263,14 +2272,18 @@
     if (msg.type === "snapshot" && msg.snapshot) applySnapshot(msg.snapshot);
     else if (msg.type === "config") {
       if (typeof msg.bubbles === "boolean") {
+        model.bubbles.enabled = msg.bubbles;
         models.forEach((m) => {
           m.bubbles.enabled = msg.bubbles;
         });
         $("bubbles").checked = msg.bubbles;
       }
-      if (typeof msg.freeIdle === "boolean") models.forEach((m) => {
-        m.freeIdle = msg.freeIdle;
-      });
+      if (typeof msg.freeIdle === "boolean") {
+        model.freeIdle = msg.freeIdle;
+        models.forEach((m) => {
+          m.freeIdle = msg.freeIdle;
+        });
+      }
       if (typeof msg.maxFps === "number") maxFps = Math.min(60, Math.max(10, msg.maxFps));
     }
   });
@@ -2278,12 +2291,28 @@
     const providers = snapshotProviders(s);
     updateProviderOrder(s, providerAppearanceOrder);
     for (const provider of providers) {
-      if (models.some((m) => m.providerLabel === provider)) continue;
-      const next = new FlowModel({ provider, freeIdle: model.freeIdle });
-      next.reduceMotion = model.reduceMotion;
-      next.bubbles.enabled = model.bubbles.enabled;
-      models.push(next);
-      Object.assign(window.flowModels, { [provider]: next });
+      const sessions = providerSnapshot(s, provider).sessions;
+      const distinctModels = [...new Set(sessions.filter((x) => isActive(x.status)).concat(sessions).map((x) => x.model))];
+      for (const name of distinctModels) {
+        if (models.some((m) => m.providerLabel === provider && m.modelKey === name)) continue;
+        const existing = models.find((m) => m.providerLabel === provider && m.modelKey === void 0);
+        if (existing) {
+          existing.bindModel(name);
+          continue;
+        }
+        const next = new FlowModel({ provider, modelKey: name, freeIdle: model.freeIdle });
+        next.reduceMotion = model.reduceMotion;
+        next.bubbles.enabled = model.bubbles.enabled;
+        models.push(next);
+      }
+      if (!models.some((m) => m.providerLabel === provider)) {
+        const next = new FlowModel({ provider, freeIdle: model.freeIdle });
+        next.reduceMotion = model.reduceMotion;
+        next.bubbles.enabled = model.bubbles.enabled;
+        models.push(next);
+      }
+      const primary = models.find((m) => m.providerLabel === provider);
+      Object.assign(window.flowModels, { [provider]: primary });
     }
     models.sort((a, b) => {
       const aOrder = providerAppearanceOrder.indexOf(a.providerLabel);
@@ -2291,6 +2320,10 @@
       return (aOrder < 0 ? Infinity : aOrder) - (bOrder < 0 ? Infinity : bOrder);
     });
     models.forEach((m) => m.sync(s));
+    for (let i = models.length - 1; i >= 0; i--) {
+      const m = models[i];
+      if (m.modelKey !== void 0 && m.sessions.length === 0 && !m.animating && !providerSnapshot(s, m.providerLabel, m.modelKey).sessions.length) models.splice(i, 1);
+    }
     renderStatus(s);
   }
   window.applySnapshot = applySnapshot;
@@ -2299,6 +2332,7 @@
   Object.assign(window, { flowModels: { Claude: model, Codex: codexModel } });
   document.getElementById("settings")?.addEventListener("click", () => vscode?.postMessage({ type: "openSettings" }));
   $("bubbles").addEventListener("change", (e) => {
+    model.bubbles.enabled = e.target.checked;
     models.forEach((m) => {
       m.bubbles.enabled = e.target.checked;
     });

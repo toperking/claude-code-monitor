@@ -19,15 +19,17 @@ export function updateProviderOrder(snapshot: MonitorSnapshot, appearanceOrder: 
 }
 
 /** Isolate events before they reach the animation state machine. */
-export function providerSnapshot(snapshot: MonitorSnapshot, provider: AiProvider): MonitorSnapshot {
+export function providerSnapshot(snapshot: MonitorSnapshot, provider: AiProvider, model?: string): MonitorSnapshot {
   const sessions = new Map(snapshot.sessions.map(s => [s.sessionId, source(s.provider, s.sessionId)]));
   const sessionSource = (id: string): AiProvider => sessions.get(id) ?? source(undefined, id);
+  const modelSessions = new Set(snapshot.sessions.filter(s => source(s.provider, s.sessionId) === provider && s.model === model).map(s => s.sessionId));
   return {
     ...snapshot,
-    sessions: snapshot.sessions.filter(s => source(s.provider, s.sessionId) === provider),
+    sessions: snapshot.sessions.filter(s => source(s.provider, s.sessionId) === provider && (model === undefined || s.model === model)),
     recentToolCalls: snapshot.recentToolCalls.filter(c =>
-      (sessions.has(c.sessionId) ? sessionSource(c.sessionId) : source(c.provider, c.sessionId)) === provider),
-    agents: snapshot.agents.filter(a => sessionSource(a.sessionId) === provider),
+      (sessions.has(c.sessionId) ? sessionSource(c.sessionId) : source(c.provider, c.sessionId)) === provider
+      && (model === undefined || modelSessions.has(c.sessionId))),
+    agents: snapshot.agents.filter(a => sessionSource(a.sessionId) === provider && (model === undefined || modelSessions.has(a.sessionId))),
     usageWindows: provider === 'Claude' ? snapshot.usageWindows : [],
     lastLimitHit: provider === 'Claude' ? snapshot.lastLimitHit : null,
   };

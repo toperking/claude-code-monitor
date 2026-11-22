@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { FlowModel } from '../src/core/model';
 import { providerSnapshot, snapshotProviders, updateProviderOrder } from '../src/core/providerSnapshot';
 import { flowSceneRows } from '../src/core/flowSceneLayout';
+import { BrainOutline } from '../src/webview/brainGlyph';
 import { fakeCanvas, newRecorded } from './fakeCanvas';
 import { call, run, snap, SessionStatus, ToolResult } from './helpers';
 
@@ -21,6 +22,49 @@ function mixed() {
 }
 
 describe('independent provider flows', () => {
+  it('reuses a brain for the same model and separates another model from the same provider', () => {
+    const s = snap(2, [call('sonnet-call', 'Bash', ToolResult.Running)]);
+    s.sessions.push(
+      { sessionId: 's2', provider: 'Claude', model: s.sessions[0].model, status: SessionStatus.Responding, lastActivity: s.at },
+      { sessionId: 's3', provider: 'Claude', model: 'claude-opus-4-1', status: SessionStatus.Responding, lastActivity: s.at },
+    );
+    s.recentToolCalls.push(call('opus-call', 'Read', ToolResult.Running, 2, { sessionId: 's3' }));
+    const sonnet = new FlowModel({ provider: 'Claude' });
+    sonnet.bindModel(s.sessions[0].model);
+    const opus = new FlowModel({ provider: 'Claude' });
+    opus.bindModel('claude-opus-4-1');
+    sonnet.sync(s); opus.sync(s);
+    expect(sonnet.sessions).toHaveLength(2);
+    expect(opus.sessions).toHaveLength(1);
+    expect(sonnet.log.map(c => c.toolUseId)).toEqual(['sonnet-call']);
+    expect(opus.log.map(c => c.toolUseId)).toEqual(['opus-call']);
+    expect(sonnet.modelText).not.toBe(opus.modelText);
+    s.sessions = s.sessions.filter(x => x.model !== 'claude-opus-4-1');
+    s.recentToolCalls = s.recentToolCalls.filter(x => x.sessionId !== 's3');
+    opus.sync(s);
+    expect(opus.modelText).toBe('OPUS 4.1');
+    expect(opus.busy).toBe(false);
+  });
+
+  it('draws two labelled brains when one provider has two models', async () => {
+    const s = snap(2);
+    s.sessions.push({ sessionId: 's3', provider: 'Claude', model: 'claude-opus-4-1',
+      status: SessionStatus.Responding, lastActivity: s.at });
+    const models = ['claude-sonnet-5-5', 'claude-opus-4-1'].map(name => {
+      const m = new FlowModel({ provider: 'Claude', modelKey: name, freeIdle: false });
+      m.sync(s); run(m, 3, 2);
+      return m;
+    });
+    const { FlowRenderer } = await import('../src/webview/render');
+    const rec = newRecorded();
+    const renderer = new FlowRenderer(fakeCanvas(rec));
+    renderer.resize(1300, 1100, 1);
+    renderer.renderScene(models, 3000);
+    expect(rec.fills.filter(f => f.path.svgSource === BrainOutline)).toHaveLength(2);
+    expect(rec.texts).toContain('SONNET 5.5');
+    expect(rec.texts).toContain('OPUS 4.1');
+  });
+
   it('keeps GPT above Claude when Claude appears on a later snapshot', () => {
     const first = mixed();
     first.sessions = first.sessions.filter(s => s.provider === 'Codex');

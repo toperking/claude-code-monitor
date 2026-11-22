@@ -219,6 +219,7 @@ export interface FlowStats { total: number; ok: number; fail: number; running: n
 
 export interface FlowOptions {
   provider?: AiProvider;
+  modelKey?: string;
   /** 統計窗口（分鐘）。 */
   windowMinutes: number;
   /** 最後一次活動後先維持多久（秒）才開始淡出。 */
@@ -308,6 +309,11 @@ export class FlowModel {
 
   get windowMinutes(): number { return this.o.windowMinutes; }
   get providerLabel(): string { return this.o.provider ?? 'AI'; }
+  get modelKey(): string | undefined { return this.o.modelKey; }
+  bindModel(model: string): void {
+    if (this.o.modelKey !== undefined && this.o.modelKey !== model) throw new Error('A brain cannot switch models');
+    this.o.modelKey = model;
+  }
   outputOffsetY = 0;
   outputSlotOffset = 0;
   get freeIdle(): boolean { return this.o.freeIdle; }
@@ -335,7 +341,7 @@ export class FlowModel {
 
   // ── 資料同步 ───────────────────────────────────────────────────────────
   sync(d: MonitorSnapshot): void {
-    if (this.o.provider) d = providerSnapshot(d, this.o.provider);
+    if (this.o.provider) d = providerSnapshot(d, this.o.provider, this.o.modelKey);
     const now = d.at;
     const windowMs = this.o.windowMinutes * 60_000;
     const inWin = d.recentToolCalls.filter(c => c.result === ToolResult.Running || now - c.time < windowMs);
@@ -352,7 +358,7 @@ export class FlowModel {
     this.lastActivity = stamps.length > 0 ? Math.max(...stamps) : null;
     this.sessionsList = d.sessions.filter(s => isActive(s.status) || live.has(s.sessionId)).slice(0, 4);
     const lead = d.sessions.find(s => isActive(s.status)) ?? d.sessions[0];
-    this.modelText = lead ? formatModel(lead.model) : '';
+    this.modelText = lead ? formatModel(lead.model) : this.o.modelKey ? formatModel(this.o.modelKey) : '';
 
     const visibleAgents = d.agents.filter(a => isActive(a.status)
       || inWin.some(c => c.sessionId === a.sessionId && c.agentId === a.agentId));
