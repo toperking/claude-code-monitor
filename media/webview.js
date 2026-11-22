@@ -1088,6 +1088,7 @@
     });
   }
   function sharedOutputY(rows) {
+    if (rows.length >= 3) return (rows[0].y + rows[rows.length - 1].y) / 2 - 44;
     const row = rows.find((r) => r.model.source > 5e-3) ?? rows.find((r) => r.model.sink > 5e-3) ?? rows[0];
     return (row?.y ?? 0) - 44;
   }

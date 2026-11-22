@@ -95,10 +95,21 @@ describe('shared output alignment', () => {
     const y = sharedOutputY(rows);
     expect(y + (Layout.Out.y + Layout.Rej.y) / 2).toBe(rows[1].y);
   });
-  it('centers the pair on the first visible row with multiple providers', () => {
+  it('centers the pair between the first and last brain with three providers', () => {
     const { models } = scene();
     models.forEach(m => run(m, 1, 2));
     const rows = flowSceneRows(models);
+    expect(sharedOutputY(rows) + (Layout.Out.y + Layout.Rej.y) / 2).toBe((rows[0].y + rows[2].y) / 2);
+  });
+  it('keeps the first brain alignment with two providers', () => {
+    const { models } = scene();
+    models.forEach(m => run(m, 1, 2));
+    const rows = flowSceneRows(models.slice(0, 2));
     expect(sharedOutputY(rows) + (Layout.Out.y + Layout.Rej.y) / 2).toBe(rows[0].y);
+  });
+  it('centers between the middle two brains with four providers', () => {
+    const { models } = scene();
+    const rows = [-540, -180, 180, 540].map(y => ({ model: models[0], y, height: 360 }));
+    expect(sharedOutputY(rows) + 44).toBe(0);
   });
 });

@@ -15,8 +15,9 @@ export function flowSceneRows(models: readonly FlowModel[]): FlowSceneRow[] {
   });
 }
 
-/** Center the shared hand/foot pair on the first visible provider. */
+/** Center the shared hand/foot pair in the brain stack when three or more lanes are visible. */
 export function sharedOutputY(rows: readonly FlowSceneRow[]): number {
+  if (rows.length >= 3) return (rows[0].y + rows[rows.length - 1].y) / 2 - 44;
   const row = rows.find(r => r.model.source > 0.005) ?? rows.find(r => r.model.sink > 0.005) ?? rows[0];
   return (row?.y ?? 0) - 44;
 }
