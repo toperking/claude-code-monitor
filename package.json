@@ -2,7 +2,7 @@
   "name": "claude-code-monitor",
   "displayName": "Claude/codex Monitor 本機監控",
   "description": "Claude 與 Codex 動態大腦流程桌布，主／子代理獨立、所有來源共用一組裝甲手腳輸出：唯讀本機逐字稿。",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "publisher": "toperking",
   "license": "MIT",
   "repository": {

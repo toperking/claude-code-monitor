@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { alienOutSpot, FlowModel, Layout, routeOut, routeRejected } from '../src/core/model';
-import { flowSceneRows } from '../src/core/flowSceneLayout';
+import { flowSceneRows, sharedOutputY } from '../src/core/flowSceneLayout';
 import { emptySnapshot, SessionStatus, ToolResult } from '../src/core/types';
 import { BrainOutline } from '../src/webview/brainGlyph';
 import { ArmorPaths } from '../src/webview/armorGlyph';
@@ -21,7 +21,7 @@ function scene() {
     return m;
   });
   const rows = flowSceneRows(models);
-  rows.forEach((row, i) => { row.model.outputOffsetY = -row.y; row.model.outputSlotOffset = i; });
+  rows.forEach((row, i) => { row.model.outputOffsetY = sharedOutputY(rows) - row.y; row.model.outputSlotOffset = i; });
   return { models, rows };
 }
 
@@ -49,8 +49,8 @@ describe('one shared armored output for the whole wallpaper', () => {
       const out = routeOut(pill, row.model.outputOffsetY)[3];
       const rejected = routeRejected(pill, row.model.outputOffsetY)[3];
       expect(out.x).toBe(Layout.Out.x - Layout.OutR);
-      expect(out.y + row.y).toBe(Layout.Out.y);
-      expect(rejected.y + row.y).toBe(Layout.Rej.y);
+      expect(out.y + row.y).toBe(Layout.Out.y + sharedOutputY(rows));
+      expect(rejected.y + row.y).toBe(Layout.Rej.y + sharedOutputY(rows));
     }
   });
 
@@ -78,9 +78,27 @@ describe('one shared armored output for the whole wallpaper', () => {
         const main = m.aliens.find(u => u.ownerKey === '')!;
         if (main.deliverTarget === null || main.pose !== 'attack') continue;
         const expected = alienOutSpot(main.deliverTarget === 'fail', main.baseScale, (main.outSlot + m.outputSlotOffset) % Layout.OutSlots);
-        if (Math.hypot(main.x - expected.x, main.y + row.y - expected.y) < 15) { docked = true; break; }
+        if (Math.hypot(main.x - expected.x, main.y + row.y - sharedOutputY(rows) - expected.y) < 15) { docked = true; break; }
       }
       expect(docked).toBe(true);
     }
+  });
+});
+
+
+describe('shared output alignment', () => {
+  it('centers the hand and foot on Codex when Claude is hidden', () => {
+    const { models } = scene();
+    models.forEach(m => run(m, 1, 2));
+    models[0].source = 0; models[0].sink = 0;
+    const rows = flowSceneRows(models);
+    const y = sharedOutputY(rows);
+    expect(y + (Layout.Out.y + Layout.Rej.y) / 2).toBe(rows[1].y);
+  });
+  it('centers the pair on the first visible row with multiple providers', () => {
+    const { models } = scene();
+    models.forEach(m => run(m, 1, 2));
+    const rows = flowSceneRows(models);
+    expect(sharedOutputY(rows) + (Layout.Out.y + Layout.Rej.y) / 2).toBe(rows[0].y);
   });
 });

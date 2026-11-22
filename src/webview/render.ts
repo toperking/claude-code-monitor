@@ -3,7 +3,7 @@
 // 發光用「多層半透明線條」疊出來，不用 shadowBlur（避免每幀大量模糊運算）。
 
 import { BubbleAnchors, BubbleQueue } from '../core/bubbles';
-import { FlowSceneRow, flowSceneRows } from '../core/flowSceneLayout';
+import { FlowSceneRow, flowSceneRows, sharedOutputY } from '../core/flowSceneLayout';
 import { BrainOutline, BrainFolds, BrainJunctions } from './brainGlyph';
 import { ArmorPaths } from './armorGlyph';
 import {
@@ -183,14 +183,16 @@ export class FlowRenderer {
     c.scale(this.fit, this.fit);
     for (const [rowIndex, row] of this.rows.entries()) {
       const m = row.model;
-      m.outputOffsetY = -row.y;
+      m.outputOffsetY = sharedOutputY(this.rows) - row.y;
       m.outputSlotOffset = rowIndex;
       c.save(); c.translate(0, row.y);
       this.alpha(m.source, () => { this.drawChipEdges(m); this.drawChips(m); this.drawHub(m); });
       this.alpha(1, () => { this.drawEdges(m); this.drawPills(m); this.drawParticles(m); this.drawAliens(m); this.drawBubbles(m); });
       c.restore();
     }
+    c.save(); c.translate(0, sharedOutputY(this.rows));
     this.alpha(Math.max(...models.map(m => m.sink)), () => { this.drawOutputs(models); this.drawSummary(models); });
+    c.restore();
     c.restore();
   }
 

@@ -1078,6 +1078,10 @@
       return row;
     });
   }
+  function sharedOutputY(rows) {
+    const row = rows.find((r) => r.model.source > 5e-3) ?? rows.find((r) => r.model.sink > 5e-3) ?? rows[0];
+    return (row?.y ?? 0) - 44;
+  }
 
   // src/webview/brainGlyph.ts
   var BrainOutline = "M -45 5 C -51 -4 -45 -21 -35 -27 C -30 -38 -15 -42 -5 -40 C 7 -47 24 -39 31 -32 C 45 -29 51 -15 48 -4 C 54 8 43 23 31 24 C 26 33 12 33 3 25 C -7 30 -20 25 -25 18 C -35 23 -47 16 -45 5 Z M 12 27 C 10 34 14 41 20 47 L 28 43 C 22 37 22 31 26 27 Z";
@@ -1304,7 +1308,7 @@
       c.scale(this.fit, this.fit);
       for (const [rowIndex, row] of this.rows.entries()) {
         const m = row.model;
-        m.outputOffsetY = -row.y;
+        m.outputOffsetY = sharedOutputY(this.rows) - row.y;
         m.outputSlotOffset = rowIndex;
         c.save();
         c.translate(0, row.y);
@@ -1322,10 +1326,13 @@
         });
         c.restore();
       }
+      c.save();
+      c.translate(0, sharedOutputY(this.rows));
       this.alpha(Math.max(...models2.map((m) => m.sink)), () => {
         this.drawOutputs(models2);
         this.drawSummary(models2);
       });
+      c.restore();
       c.restore();
     }
     // ── 小工具 ───────────────────────────────────────────────────────────
@@ -2268,8 +2275,9 @@
       const dt = lastDraw === 0 ? 0 : (ts - lastDraw) / 1e3;
       lastDraw = ts;
       const t0 = performance.now();
-      flowSceneRows(models).forEach((row, i) => {
-        row.model.outputOffsetY = -row.y;
+      const rows = flowSceneRows(models);
+      rows.forEach((row, i) => {
+        row.model.outputOffsetY = sharedOutputY(rows) - row.y;
         row.model.outputSlotOffset = i;
       });
       models.forEach((m) => m.tick(dt, Date.now()));

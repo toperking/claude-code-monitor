@@ -12,3 +12,9 @@ export function flowSceneRows(models: readonly FlowModel[]): FlowSceneRow[] {
     return row;
   });
 }
+
+/** Center the shared hand/foot pair on the first visible provider. */
+export function sharedOutputY(rows: readonly FlowSceneRow[]): number {
+  const row = rows.find(r => r.model.source > 0.005) ?? rows.find(r => r.model.sink > 0.005) ?? rows[0];
+  return (row?.y ?? 0) - 44;
+}
