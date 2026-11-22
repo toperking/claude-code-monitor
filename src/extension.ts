@@ -1,5 +1,5 @@
 // 擴充功能主機：只做三件事——定時掃描本機 ~/.claude 的逐字稿（唯讀）、把快照送給畫面、處理設定變更。
-// 不連網、不寫入任何檔案、不執行任何外部程式。
+// 監控與掃描不連網、唯讀；使用者主動操作 RAG 設定時才寫入技能或搬移資料庫。
 //
 // 畫面有兩個出口，共用同一個 MonitorHub（同一個掃描器、同一個計時器）：
 //   ① 左邊活動列的圖示 → 側邊欄裡的「本機監控」（WebviewView）
@@ -14,6 +14,7 @@ import { MonitorSnapshot } from './core/types';
 import { executeRagDb, planRagDb } from './ragdb/apply';
 import { realRagDbDeps } from './ragdb/node';
 import { dbFileInFolder } from './ragdb/plan';
+import { installRagMcpSkill } from './skill/install';
 
 function claudeHome(): string {
   const configured = vscode.workspace.getConfiguration('claudeMonitor').get<string>('claudeHome', '').trim();
@@ -201,7 +202,7 @@ class EditorPanel {
 
 /**
  * 設定頁的「套用 RAG 資料庫位置」：規劃 → 一定要使用者在確認視窗按下去 → 搬資料庫並重新註冊 local-rag。
- * 這是整個擴充功能唯一會寫檔、會執行外部程式（claude）的地方，所以只在使用者明確按下確認時才動作。
+ * 這是資料庫搬移與重新註冊的入口，所以只在使用者明確按下確認時才動作。
  */
 async function applyRagDb(log: vscode.OutputChannel): Promise<void> {
   const cfg = vscode.workspace.getConfiguration('claudeMonitor');
@@ -268,7 +269,19 @@ async function pickRagDbFolder(log: vscode.OutputChannel): Promise<void> {
   if (choice === apply) await applyRagDb(log);
 }
 
-/** 設定按鈕（齒輪）點下去的選單：選資料夾、套用、開設定頁。 */
+/** 在兩個 AI 的使用者技能目錄產生 rag-MCP.md，並顯示實際安裝路徑。 */
+async function installRagSkill(log: vscode.OutputChannel): Promise<void> {
+  const cfg = vscode.workspace.getConfiguration('claudeMonitor');
+  const name = (cfg.get<string>('ragServerName', 'local-rag') ?? '').trim() || 'local-rag';
+  const result = await vscode.window.withProgress(
+    { location: vscode.ProgressLocation.Notification, title: '正在產生並安裝 RAG 技能…' },
+    () => installRagMcpSkill(name),
+  );
+  log.appendLine(`[RAG 技能] ${result}`);
+  void vscode.window.showInformationMessage(result);
+}
+
+/** 設定按鈕（齒輪）點下去的選單。 */
 async function ragMenu(log: vscode.OutputChannel): Promise<void> {
   const cfg = vscode.workspace.getConfiguration('claudeMonitor');
   const configured = (cfg.get<string>('ragDbPath', '') ?? '').trim();
@@ -276,6 +289,7 @@ async function ragMenu(log: vscode.OutputChannel): Promise<void> {
   const items: Item[] = [
     { label: '$(folder) 選擇資料夾…', description: '跳出資料夾挑選器，選完自動填入路徑', run: () => pickRagDbFolder(log) },
     { label: '$(check) 套用 RAG 資料庫位置…', description: configured !== '' ? configured : '（尚未設定新位置）', detail: '先顯示計畫並要你確認，同意後才搬移資料庫並重新註冊', run: () => applyRagDb(log) },
+    { label: '$(book) 產生並安裝 RAG 技能', detail: '產生 rag-MCP.md，安裝到 Claude Code 與 Codex 的技能目錄', run: () => installRagSkill(log) },
     { label: '$(settings-gear) 開啟設定頁', run: () => vscode.commands.executeCommand('claudeMonitor.openRagSettings') },
   ];
   const choice = await vscode.window.showQuickPick(items, { title: 'RAG 資料庫設定', placeHolder: '選擇要做什麼' });
@@ -287,8 +301,8 @@ export function activate(context: vscode.ExtensionContext): void {
   const ragLog = vscode.window.createOutputChannel('Claude/codex Monitor');
   /** 命令的共同收尾：未預期的錯誤寫進輸出面板並提示，不讓命令靜悄悄失敗。 */
   const guarded = (fn: () => Promise<void>) => (): Promise<void> => fn().catch(err => {
-    ragLog.appendLine(`[RAG 資料庫] 未預期的錯誤：${String(err)}`);
-    void vscode.window.showErrorMessage(`RAG 資料庫位置：發生未預期的錯誤（${err instanceof Error ? err.message : String(err)}）`);
+    ragLog.appendLine(`[RAG 設定] 未預期的錯誤：${String(err)}`);
+    void vscode.window.showErrorMessage(`RAG 設定：發生未預期的錯誤（${err instanceof Error ? err.message : String(err)}）`);
   });
   context.subscriptions.push(
     hub,
@@ -297,6 +311,7 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('claudeMonitor.ragMenu', guarded(() => ragMenu(ragLog))),
     vscode.commands.registerCommand('claudeMonitor.pickRagDbFolder', guarded(() => pickRagDbFolder(ragLog))),
     vscode.commands.registerCommand('claudeMonitor.applyRagDb', guarded(() => applyRagDb(ragLog))),
+    vscode.commands.registerCommand('claudeMonitor.installRagMcpSkill', guarded(() => installRagSkill(ragLog))),
     vscode.window.registerWebviewViewProvider(SidebarProvider.viewType, new SidebarProvider(hub, context), { webviewOptions: { retainContextWhenHidden: true } }),
     vscode.commands.registerCommand('claudeMonitor.show', () => vscode.commands.executeCommand('claudeMonitor.view.focus')),
     vscode.commands.registerCommand('claudeMonitor.open', () => EditorPanel.show(hub, context)),

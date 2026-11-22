@@ -179,11 +179,11 @@ describe('擴充功能主機', () => {
     expect(h.executed).toContain('claudeMonitor.ragMenu');
   });
 
-  it('設定選單：有「選擇資料夾」「套用」「開啟設定頁」三項；選「選擇資料夾」就跳出資料夾挑選器', async () => {
+  it('設定選單：有 RAG 技能安裝選項；選「選擇資料夾」就跳出資料夾挑選器', async () => {
     activate(ctx() as never);
     h.quickChoice = '選擇資料夾';
     await (h.commands.get('claudeMonitor.ragMenu')!() as unknown as Promise<void>);
-    expect(h.quickPicks[0].join('|')).toMatch(/選擇資料夾.*套用.*開啟設定頁/);
+    expect(h.quickPicks[0].join('|')).toMatch(/選擇資料夾.*套用.*產生並安裝 RAG 技能.*開啟設定頁/);
     expect(h.openDialogs).toHaveLength(1);
     expect(h.openDialogs[0]).toMatchObject({ canSelectFolders: true, canSelectFiles: false }); // 只能選資料夾
   });
@@ -217,14 +217,14 @@ describe('擴充功能主機', () => {
 
   it('RAG 資料庫的命令與設定項目都有註冊，而且設定本身不會觸發任何動作', () => {
     activate(ctx() as never);
-    for (const id of ['claudeMonitor.ragMenu', 'claudeMonitor.pickRagDbFolder', 'claudeMonitor.openRagSettings', 'claudeMonitor.applyRagDb']) {
+    for (const id of ['claudeMonitor.ragMenu', 'claudeMonitor.pickRagDbFolder', 'claudeMonitor.openRagSettings', 'claudeMonitor.applyRagDb', 'claudeMonitor.installRagMcpSkill']) {
       expect(h.commands.has(id)).toBe(true);
     }
     const pkg = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as {
       contributes: { commands: Array<{ command: string }>; configuration: { properties: Record<string, { default: unknown; markdownDescription?: string }> } };
     };
     const ids = pkg.contributes.commands.map(c => c.command);
-    expect(ids).toEqual(expect.arrayContaining(['claudeMonitor.ragMenu', 'claudeMonitor.pickRagDbFolder', 'claudeMonitor.openRagSettings', 'claudeMonitor.applyRagDb']));
+    expect(ids).toEqual(expect.arrayContaining(['claudeMonitor.ragMenu', 'claudeMonitor.pickRagDbFolder', 'claudeMonitor.openRagSettings', 'claudeMonitor.applyRagDb', 'claudeMonitor.installRagMcpSkill']));
     expect(pkg.contributes.configuration.properties['claudeMonitor.ragDbPath'].markdownDescription).toContain('command:claudeMonitor.pickRagDbFolder'); // 設定頁裡有可點的「選擇資料夾」連結
     const props = pkg.contributes.configuration.properties;
     expect(props['claudeMonitor.ragDbPath'].default).toBe(''); // 預設空白＝不搬、不改
