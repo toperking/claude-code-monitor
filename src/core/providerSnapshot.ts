@@ -5,6 +5,9 @@ export type AiProvider = string;
 const source = (provider: AiProvider | undefined, sessionId: string): AiProvider =>
   sessionId.startsWith('codex:') ? 'Codex' : provider?.trim() || 'Claude';
 
+export const sessionProvider = (session: { provider?: string; sessionId: string }): AiProvider =>
+  source(session.provider, session.sessionId);
+
 export function snapshotProviders(snapshot: MonitorSnapshot): string[] {
   return [...new Set([...snapshot.sessions, ...snapshot.recentToolCalls].map(s => source(s.provider, s.sessionId)))];
 }

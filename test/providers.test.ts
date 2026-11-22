@@ -22,6 +22,20 @@ function mixed() {
 }
 
 describe('independent provider flows', () => {
+  it('keeps visible model brains close and excludes invisible historical lanes', () => {
+    const s = snap(2);
+    s.sessions.push({ sessionId: 's3', provider: 'Claude', model: 'claude-opus-4-1',
+      status: SessionStatus.Responding, lastActivity: s.at });
+    const sonnet = new FlowModel({ provider: 'Claude', modelKey: s.sessions[0].model });
+    const opus = new FlowModel({ provider: 'Claude', modelKey: 'claude-opus-4-1' });
+    const old = new FlowModel({ provider: 'Claude', modelKey: 'claude-haiku-4-5' });
+    sonnet.sync(s); opus.sync(s); old.sync(s);
+    const rows = flowSceneRows([sonnet, old, opus]);
+    expect(rows.map(r => r.model)).toEqual([sonnet, opus]);
+    expect(rows.map(r => r.height)).toEqual([360, 360]);
+    expect(rows[1].y - rows[0].y).toBe(360);
+  });
+
   it('reuses a brain for the same model and separates another model from the same provider', () => {
     const s = snap(2, [call('sonnet-call', 'Bash', ToolResult.Running)]);
     s.sessions.push(

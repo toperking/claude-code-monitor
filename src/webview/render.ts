@@ -193,7 +193,8 @@ export class FlowRenderer {
       c.restore();
     }
     c.save(); c.translate(0, outY);
-    this.alpha(Math.max(...models.map(m => m.sink)), () => { this.drawOutputs(models); this.drawSummary(models); });
+    const visibleModels = this.rows.map(row => row.model);
+    this.alpha(Math.max(...visibleModels.map(m => m.sink)), () => { this.drawOutputs(visibleModels); this.drawSummary(visibleModels); });
     c.restore();
     c.restore();
   }

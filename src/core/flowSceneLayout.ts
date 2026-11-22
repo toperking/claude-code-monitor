@@ -2,9 +2,11 @@ import { FlowModel } from './model';
 
 export interface FlowSceneRow { model: FlowModel; y: number; height: number }
 
-/** Provider groups in a shared world, with enough room for robots and expanded tools. */
+/** Only visible lanes occupy space; size active lanes for their actual tool content. */
 export function flowSceneRows(models: readonly FlowModel[]): FlowSceneRow[] {
-  const sizes = models.map(model => ({ model, height: Math.max(600, model.columnHeight + 240) }));
+  const sizes = models.filter(model => model.busy || model.isLive || model.source > 0.005 || model.sink > 0.005
+    || model.pillList.some(p => p.fade > 0.01))
+    .map(model => ({ model, height: Math.max(360, model.columnHeight + 180) }));
   let top = -sizes.reduce((sum, row) => sum + row.height, 0) / 2;
   return sizes.map(({ model, height }) => {
     const row = { model, height, y: top + height / 2 };

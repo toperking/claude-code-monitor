@@ -92,15 +92,9 @@
 
   // src/core/providerSnapshot.ts
   var source = (provider, sessionId) => sessionId.startsWith("codex:") ? "Codex" : provider?.trim() || "Claude";
+  var sessionProvider = (session) => source(session.provider, session.sessionId);
   function snapshotProviders(snapshot) {
     return [...new Set([...snapshot.sessions, ...snapshot.recentToolCalls].map((s) => source(s.provider, s.sessionId)))];
-  }
-  function updateProviderOrder(snapshot, appearanceOrder) {
-    const providers = snapshotProviders(snapshot);
-    const active = providers.filter((provider) => providerSnapshot(snapshot, provider).sessions.some((s) => isActive(s.status)));
-    for (const provider of [...active, ...providers]) {
-      if (!appearanceOrder.includes(provider)) appearanceOrder.push(provider);
-    }
   }
   function providerSnapshot(snapshot, provider, model2) {
     const sessions = new Map(snapshot.sessions.map((s) => [s.sessionId, source(s.provider, s.sessionId)]));
@@ -1085,7 +1079,7 @@
 
   // src/core/flowSceneLayout.ts
   function flowSceneRows(models2) {
-    const sizes = models2.map((model2) => ({ model: model2, height: Math.max(600, model2.columnHeight + 240) }));
+    const sizes = models2.filter((model2) => model2.busy || model2.isLive || model2.source > 5e-3 || model2.sink > 5e-3 || model2.pillList.some((p) => p.fade > 0.01)).map((model2) => ({ model: model2, height: Math.max(360, model2.columnHeight + 180) }));
     let top = -sizes.reduce((sum, row) => sum + row.height, 0) / 2;
     return sizes.map(({ model: model2, height }) => {
       const row = { model: model2, height, y: top + height / 2 };
@@ -1373,9 +1367,10 @@
       }
       c.save();
       c.translate(0, outY);
-      this.alpha(Math.max(...models2.map((m) => m.sink)), () => {
-        this.drawOutputs(models2);
-        this.drawSummary(models2);
+      const visibleModels = this.rows.map((row) => row.model);
+      this.alpha(Math.max(...visibleModels.map((m) => m.sink)), () => {
+        this.drawOutputs(visibleModels);
+        this.drawSummary(visibleModels);
       });
       c.restore();
       c.restore();
@@ -2238,10 +2233,9 @@
   var model = new FlowModel({ provider: "Claude" });
   var codexModel = new FlowModel({ provider: "Codex" });
   var models = [model, codexModel];
-  var providerAppearanceOrder = [];
   var canvas = $("flow");
   var stage = $("stage");
-  canvas.setAttribute("aria-label", "AI \u5171\u540C\u684C\u5E03\uFF1A\u5404\u4F86\u6E90\u7531\u4E0A\u5F80\u4E0B\u6392\u5217");
+  canvas.setAttribute("aria-label", "AI \u5171\u540C\u684C\u5E03\uFF1A\u6A21\u578B\u4F9D\u9996\u6B21\u51FA\u73FE\u9806\u5E8F\u7531\u4E0A\u5F80\u4E0B\u6392\u5217");
   var renderer = new FlowRenderer(canvas);
   renderer.model = model;
   var motion = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -2289,22 +2283,24 @@
   });
   function applySnapshot(s) {
     const providers = snapshotProviders(s);
-    updateProviderOrder(s, providerAppearanceOrder);
-    for (const provider of providers) {
-      const sessions = providerSnapshot(s, provider).sessions;
-      const distinctModels = [...new Set(sessions.filter((x) => isActive(x.status)).concat(sessions).map((x) => x.model))];
-      for (const name of distinctModels) {
-        if (models.some((m) => m.providerLabel === provider && m.modelKey === name)) continue;
-        const existing = models.find((m) => m.providerLabel === provider && m.modelKey === void 0);
-        if (existing) {
-          existing.bindModel(name);
-          continue;
-        }
-        const next = new FlowModel({ provider, modelKey: name, freeIdle: model.freeIdle });
+    const sessions = s.sessions.filter((x) => isActive(x.status)).concat(s.sessions);
+    for (const session of sessions) {
+      const provider = sessionProvider(session);
+      const name = session.model;
+      if (models.some((m) => m.providerLabel === provider && m.modelKey === name)) continue;
+      const existing = models.find((m) => m.providerLabel === provider && m.modelKey === void 0);
+      const next = existing ?? new FlowModel({ provider, modelKey: name, freeIdle: model.freeIdle });
+      if (existing) {
+        existing.bindModel(name);
+        models.splice(models.indexOf(existing), 1);
+      } else {
         next.reduceMotion = model.reduceMotion;
         next.bubbles.enabled = model.bubbles.enabled;
-        models.push(next);
       }
+      const firstUnbound = models.findIndex((m) => m.modelKey === void 0);
+      models.splice(firstUnbound < 0 ? models.length : firstUnbound, 0, next);
+    }
+    for (const provider of providers) {
       if (!models.some((m) => m.providerLabel === provider)) {
         const next = new FlowModel({ provider, freeIdle: model.freeIdle });
         next.reduceMotion = model.reduceMotion;
@@ -2314,11 +2310,6 @@
       const primary = models.find((m) => m.providerLabel === provider);
       Object.assign(window.flowModels, { [provider]: primary });
     }
-    models.sort((a, b) => {
-      const aOrder = providerAppearanceOrder.indexOf(a.providerLabel);
-      const bOrder = providerAppearanceOrder.indexOf(b.providerLabel);
-      return (aOrder < 0 ? Infinity : aOrder) - (bOrder < 0 ? Infinity : bOrder);
-    });
     models.forEach((m) => m.sync(s));
     for (let i = models.length - 1; i >= 0; i--) {
       const m = models[i];

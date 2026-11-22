@@ -2,7 +2,7 @@
 
 在 VS Code 裡同時監看 Claude Code 與 Codex 的本機任務、工具與機甲狀態：
 
-- **同一張流程桌布**：Claude、Codex 各自的 session → 大腦主節點／子代理 → 工具方塊，依來源首次出現順序以列表方式由上往下排列；同來源的不同模型各有大腦，相同模型共用大腦，整張桌布共用縮放與拖曳平移。
+- **同一張流程桌布**：Claude、Codex 各自的 session → 大腦主節點／子代理 → 工具方塊；大腦依模型首次出現順序排成單一清單，新模型一律接在下方，相同模型的 session 共用大腦。整張桌布共用縮放與拖曳平移。
 - **動態大腦**：人類大腦側面輪廓、腦迴、小腦與腦幹，搭配神經脈衝、掃描與呼吸光效；旁邊僅顯示實際模型名稱，例如 `GPT-6.1 SOL`。
 - **唯一一組裝甲手腳**：所有 AI 與子代理的結果都匯聚到同一組裝甲護臂／腿部，分別標示成功與失敗，關節與能量流具有動態科技風格；統計與摘要只顯示一次。
 - **來源獨立**：各來源的模型、機甲、工具與忙碌狀態分開，同名工具不跨來源合併。用量卡片與固定額度提示列已移除。
@@ -31,7 +31,7 @@ Codex 依本機 rollout 的任務開始／完成／中止、工具呼叫／回�
 
 從 [GitHub Releases](https://github.com/toperking/claude-code-monitor/releases) 下載 VSIX，執行 VS Code 命令「Extensions: Install from VSIX」，安裝後重新載入視窗。也可在 Open VSX 搜尋 `toperking.claude-code-monitor`。
 
-Windows 桌面版同一個 Release 附 `ClaudeMonitor-win-x64-0.5.4.zip`：解壓後執行 `ClaudeMonitor.Desktop.exe`，不需另外安裝 .NET。先關閉舊版（含通知區程式），再開新版。路徑以環境變數 `Monitor__ClaudeHome`、`Monitor__CodexHome` 覆寫，未設 Codex 路徑時採用 `CODEX_HOME` 或 `~/.codex`。桌面版也是唯讀本機紀錄，RAG 搬移需主動確認才執行。
+Windows 桌面版同一個 Release 附 `ClaudeMonitor-win-x64-0.5.5.zip`：解壓後執行 `ClaudeMonitor.Desktop.exe`，不需另外安裝 .NET。先關閉舊版（含通知區程式），再開新版。路徑以環境變數 `Monitor__ClaudeHome`、`Monitor__CodexHome` 覆寫，未設 Codex 路徑時採用 `CODEX_HOME` 或 `~/.codex`。桌面版也是唯讀本機紀錄，RAG 搬移需主動確認才執行。
 
 | 操作 | 效果 |
 | --- | --- |
@@ -96,6 +96,8 @@ npm run package       # 型別檢查 + 建置 + 打包成 .vsix
 ```
 
 結構：`src/core/`（掃描器、模型、泡泡；與畫面無關）、`src/webview/`（Canvas 繪製與頁面）、`src/extension.ts`（面板與定時掃描）。
+
+0.5.5：新模型在全域清單下方出現；看不見的歷史模型不佔空白列，少量工具時大腦的垂直間距縮小。
 
 0.5.4：同來源切換到不同模型時顯示新的大腦；同模型的 session 共用大腦，舊大腦淡出後移除。
 

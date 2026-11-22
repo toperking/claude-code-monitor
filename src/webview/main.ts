@@ -3,7 +3,7 @@
 
 import { FlowModel } from '../core/model';
 import { flowSceneRows, OutputAnchor, sharedOutputY } from '../core/flowSceneLayout';
-import { providerSnapshot, snapshotProviders, updateProviderOrder } from '../core/providerSnapshot';
+import { providerSnapshot, sessionProvider, snapshotProviders } from '../core/providerSnapshot';
 import { MonitorSnapshot, isActive } from '../core/types';
 import { FlowRenderer } from './render';
 
@@ -16,10 +16,9 @@ const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) 
 const model = new FlowModel({ provider: 'Claude' });
 const codexModel = new FlowModel({ provider: 'Codex' });
 const models = [model, codexModel];
-const providerAppearanceOrder: string[] = [];
 const canvas = $<HTMLCanvasElement>('flow');
 const stage = $('stage');
-canvas.setAttribute('aria-label', 'AI 共同桌布：各來源由上往下排列');
+canvas.setAttribute('aria-label', 'AI 共同桌布：模型依首次出現順序由上往下排列');
 const renderer = new FlowRenderer(canvas);
 renderer.model = model;
 
@@ -58,19 +57,24 @@ window.addEventListener('message', ev => {
 /** 供除錯與測試頁面直接餵快照。 */
 export function applySnapshot(s: MonitorSnapshot): void {
   const providers = snapshotProviders(s);
-  updateProviderOrder(s, providerAppearanceOrder);
-  for (const provider of providers) {
-    const sessions = providerSnapshot(s, provider).sessions;
-    const distinctModels = [...new Set(sessions.filter(x => isActive(x.status)).concat(sessions).map(x => x.model))];
-    for (const name of distinctModels) {
-      if (models.some(m => m.providerLabel === provider && m.modelKey === name)) continue;
-      const existing = models.find(m => m.providerLabel === provider && m.modelKey === undefined);
-      if (existing) { existing.bindModel(name); continue; }
-      const next = new FlowModel({ provider, modelKey: name, freeIdle: model.freeIdle });
+  const sessions = s.sessions.filter(x => isActive(x.status)).concat(s.sessions);
+  for (const session of sessions) {
+    const provider = sessionProvider(session);
+    const name = session.model;
+    if (models.some(m => m.providerLabel === provider && m.modelKey === name)) continue;
+    const existing = models.find(m => m.providerLabel === provider && m.modelKey === undefined);
+    const next = existing ?? new FlowModel({ provider, modelKey: name, freeIdle: model.freeIdle });
+    if (existing) {
+      existing.bindModel(name);
+      models.splice(models.indexOf(existing), 1);
+    } else {
       next.reduceMotion = model.reduceMotion;
       next.bubbles.enabled = model.bubbles.enabled;
-      models.push(next);
     }
+    const firstUnbound = models.findIndex(m => m.modelKey === undefined);
+    models.splice(firstUnbound < 0 ? models.length : firstUnbound, 0, next);
+  }
+  for (const provider of providers) {
     if (!models.some(m => m.providerLabel === provider)) {
       const next = new FlowModel({ provider, freeIdle: model.freeIdle });
       next.reduceMotion = model.reduceMotion;
@@ -80,11 +84,6 @@ export function applySnapshot(s: MonitorSnapshot): void {
     const primary = models.find(m => m.providerLabel === provider)!;
     Object.assign((window as unknown as { flowModels: Record<string, FlowModel> }).flowModels, { [provider]: primary });
   }
-  models.sort((a, b) => {
-    const aOrder = providerAppearanceOrder.indexOf(a.providerLabel);
-    const bOrder = providerAppearanceOrder.indexOf(b.providerLabel);
-    return (aOrder < 0 ? Infinity : aOrder) - (bOrder < 0 ? Infinity : bOrder);
-  });
   models.forEach(m => m.sync(s));
   // A switched-away model keeps its brain while fading, then releases its row.
   for (let i = models.length - 1; i >= 0; i--) {
