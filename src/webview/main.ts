@@ -2,7 +2,7 @@
 // 狀態列與「說明泡泡」開關是一般 HTML；流程圖是 Canvas。
 
 import { FlowModel } from '../core/model';
-import { flowSceneRows, sharedOutputY } from '../core/flowSceneLayout';
+import { flowSceneRows, OutputAnchor, sharedOutputY } from '../core/flowSceneLayout';
 import { snapshotProviders, updateProviderOrder } from '../core/providerSnapshot';
 import { MonitorSnapshot, isActive } from '../core/types';
 import { FlowRenderer } from './render';
@@ -103,17 +103,21 @@ resize();
 const renderStats = { frames: 0, ms: 0 };
 (window as unknown as { renderStats: typeof renderStats }).renderStats = renderStats;
 
+// 手／腳整組會慢慢滑到新位置（不是瞬間跳過去）；滑動中要用高頻重畫，否則閒置的一秒一張會看起來像跳
+const outputAnchor = new OutputAnchor();
 let lastDraw = 0;
 const frame = (ts: number): void => {
-  const interval = models.some(m => m.animating) ? 1000 / maxFps : 1000;
+  const moving = outputAnchor.isMoving(sharedOutputY(flowSceneRows(models)));
+  const interval = models.some(m => m.animating) || moving ? 1000 / maxFps : 1000;
   if (lastDraw === 0 || ts - lastDraw >= interval - 2) {
     const dt = lastDraw === 0 ? 0 : (ts - lastDraw) / 1000;
     lastDraw = ts;
     const t0 = performance.now();
     const rows = flowSceneRows(models);
-    rows.forEach((row, i) => { row.model.outputOffsetY = sharedOutputY(rows) - row.y; row.model.outputSlotOffset = i; });
+    const outputY = outputAnchor.update(sharedOutputY(rows), dt, models.every(m => m.reduceMotion));
+    rows.forEach((row, i) => { row.model.outputOffsetY = outputY - row.y; row.model.outputSlotOffset = i; });
     models.forEach(m => m.tick(dt, Date.now()));
-    renderer.renderScene(models, ts);
+    renderer.renderScene(models, ts, outputY);
     renderStats.frames++; renderStats.ms += performance.now() - t0;
   }
   requestAnimationFrame(frame);

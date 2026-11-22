@@ -1,4 +1,4 @@
-# Claude / Codex 本機監控 0.5.2
+# Claude / Codex 本機監控 0.5.3
 
 VS Code 擴充版與 Windows WPF 桌面版同步監看兩種來源，不連網、不執行逐字稿中的程式。
 
@@ -26,6 +26,6 @@ Codex 逐字稿是實際觀察到的本機格式，並非穩定公開 API；未�
 
 ## 安裝與發佈
 
-- VS Code：安裝 `claude-code-monitor-0.5.2.vsix`，既有視窗重新載入後生效；GitHub Release 與 Open VSX 沿用 toperking/claude-code-monitor。
-- Windows：解壓 `ClaudeMonitor-win-x64-0.5.2.zip`，執行 `ClaudeMonitor.Desktop.exe`，self-contained，無需另裝 .NET。先關閉舊版（含通知區圖示）再開新版；單一執行個體機制不允許同時開兩版。
+- VS Code：安裝 `claude-code-monitor-0.5.3.vsix`，既有視窗重新載入後生效；GitHub Release 與 Open VSX 沿用 toperking/claude-code-monitor。
+- Windows：解壓 `ClaudeMonitor-win-x64-0.5.3.zip`，執行 `ClaudeMonitor.Desktop.exe`，self-contained，無需另裝 .NET。先關閉舊版（含通知區圖示）再開新版；單一執行個體機制不允許同時開兩版。
 - RAG 本體、資料庫、帳號 token 與本機逐字稿不放入公開發佈包。

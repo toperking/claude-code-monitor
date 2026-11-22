@@ -167,8 +167,10 @@ export class FlowRenderer {
     return null;
   }
 
-  renderScene(models: readonly FlowModel[], ms: number): void {
+  /** `outputY`：手／腳整組目前的 Y（動畫迴圈慢慢滑過去的值）；沒給就直接用目標位置。 */
+  renderScene(models: readonly FlowModel[], ms: number, outputY?: number): void {
     this.rows = flowSceneRows(models);
+    const outY = outputY ?? sharedOutputY(this.rows);
     this.ms = ms;
     const c = this.ctx;
     c.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
@@ -183,14 +185,14 @@ export class FlowRenderer {
     c.scale(this.fit, this.fit);
     for (const [rowIndex, row] of this.rows.entries()) {
       const m = row.model;
-      m.outputOffsetY = sharedOutputY(this.rows) - row.y;
+      m.outputOffsetY = outY - row.y;
       m.outputSlotOffset = rowIndex;
       c.save(); c.translate(0, row.y);
       this.alpha(m.source, () => { this.drawChipEdges(m); this.drawChips(m); this.drawHub(m); });
       this.alpha(1, () => { this.drawEdges(m); this.drawPills(m); this.drawParticles(m); this.drawAliens(m); this.drawBubbles(m); });
       c.restore();
     }
-    c.save(); c.translate(0, sharedOutputY(this.rows));
+    c.save(); c.translate(0, outY);
     this.alpha(Math.max(...models.map(m => m.sink)), () => { this.drawOutputs(models); this.drawSummary(models); });
     c.restore();
     c.restore();

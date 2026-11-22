@@ -1089,6 +1089,34 @@
     const row = rows.find((r) => r.model.source > 5e-3) ?? rows.find((r) => r.model.sink > 5e-3) ?? rows[0];
     return (row?.y ?? 0) - 44;
   }
+  var OutputAnchor = class _OutputAnchor {
+    /** 靠近比例：越大越快（每秒約剩下 e^-Rate 沒走完）。 */
+    static Rate = 2;
+    /** 最快每秒走多少世界單位，距離很遠時不會一下衝過去。 */
+    static MaxSpeed = 450;
+    /** 單次最多當成這麼多秒；久沒畫（閒置）之後的第一張不會因為時間差一次走完。 */
+    static MaxStep = 0.1;
+    y = 0;
+    ready = false;
+    /** 還沒到目標，畫面需要繼續高頻重畫。 */
+    isMoving(target) {
+      return this.ready && Math.abs(target - this.y) > 0.05;
+    }
+    /** 往目標走一步並回傳目前位置。第一次、`snap`（減少動態）時直接就位。 */
+    update(target, dt, snap = false) {
+      if (!this.ready || snap) {
+        this.y = target;
+        this.ready = true;
+        return this.y;
+      }
+      const step = Math.min(Math.max(dt, 0), _OutputAnchor.MaxStep);
+      const want = (target - this.y) * (1 - Math.exp(-step * _OutputAnchor.Rate));
+      const cap = _OutputAnchor.MaxSpeed * step;
+      this.y += Math.max(-cap, Math.min(cap, want));
+      if (Math.abs(target - this.y) < 0.05) this.y = target;
+      return this.y;
+    }
+  };
 
   // src/webview/brainGlyph.ts
   var BrainOutline = "M -45 5 C -51 -4 -45 -21 -35 -27 C -30 -38 -15 -42 -5 -40 C 7 -47 24 -39 31 -32 C 45 -29 51 -15 48 -4 C 54 8 43 23 31 24 C 26 33 12 33 3 25 C -7 30 -20 25 -25 18 C -35 23 -47 16 -45 5 Z M 12 27 C 10 34 14 41 20 47 L 28 43 C 22 37 22 31 26 27 Z";
@@ -1298,8 +1326,10 @@
       }
       return null;
     }
-    renderScene(models2, ms) {
+    /** `outputY`：手／腳整組目前的 Y（動畫迴圈慢慢滑過去的值）；沒給就直接用目標位置。 */
+    renderScene(models2, ms, outputY) {
       this.rows = flowSceneRows(models2);
+      const outY = outputY ?? sharedOutputY(this.rows);
       this.ms = ms;
       const c = this.ctx;
       c.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
@@ -1315,7 +1345,7 @@
       c.scale(this.fit, this.fit);
       for (const [rowIndex, row] of this.rows.entries()) {
         const m = row.model;
-        m.outputOffsetY = sharedOutputY(this.rows) - row.y;
+        m.outputOffsetY = outY - row.y;
         m.outputSlotOffset = rowIndex;
         c.save();
         c.translate(0, row.y);
@@ -1334,7 +1364,7 @@
         c.restore();
       }
       c.save();
-      c.translate(0, sharedOutputY(this.rows));
+      c.translate(0, outY);
       this.alpha(Math.max(...models2.map((m) => m.sink)), () => {
         this.drawOutputs(models2);
         this.drawSummary(models2);
@@ -2283,20 +2313,23 @@
   resize();
   var renderStats = { frames: 0, ms: 0 };
   window.renderStats = renderStats;
+  var outputAnchor = new OutputAnchor();
   var lastDraw = 0;
   var frame = (ts) => {
-    const interval = models.some((m) => m.animating) ? 1e3 / maxFps : 1e3;
+    const moving = outputAnchor.isMoving(sharedOutputY(flowSceneRows(models)));
+    const interval = models.some((m) => m.animating) || moving ? 1e3 / maxFps : 1e3;
     if (lastDraw === 0 || ts - lastDraw >= interval - 2) {
       const dt = lastDraw === 0 ? 0 : (ts - lastDraw) / 1e3;
       lastDraw = ts;
       const t0 = performance.now();
       const rows = flowSceneRows(models);
+      const outputY = outputAnchor.update(sharedOutputY(rows), dt, models.every((m) => m.reduceMotion));
       rows.forEach((row, i) => {
-        row.model.outputOffsetY = sharedOutputY(rows) - row.y;
+        row.model.outputOffsetY = outputY - row.y;
         row.model.outputSlotOffset = i;
       });
       models.forEach((m) => m.tick(dt, Date.now()));
-      renderer.renderScene(models, ts);
+      renderer.renderScene(models, ts, outputY);
       renderStats.frames++;
       renderStats.ms += performance.now() - t0;
     }
