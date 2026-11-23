@@ -1,4 +1,6 @@
-# Claude / Codex 本機監控 0.5.3
+# Claude / Codex 本機監控 0.5.8
+
+大腦依模型首次出現順序排成單一清單，新模型一律接在下方，不按 AI 來源分段；相同模型的 session 共用大腦。不可見的歷史模型不佔空白列，少量工具時的垂直間距也已縮小。
 
 VS Code 擴充版與 Windows WPF 桌面版同步監看兩種來源，不連網、不執行逐字稿中的程式。
 
@@ -26,6 +28,7 @@ Codex 逐字稿是實際觀察到的本機格式，並非穩定公開 API；未�
 
 ## 安裝與發佈
 
-- VS Code：安裝 `claude-code-monitor-0.5.3.vsix`，既有視窗重新載入後生效；GitHub Release 與 Open VSX 沿用 toperking/claude-code-monitor。
-- Windows：解壓 `ClaudeMonitor-win-x64-0.5.3.zip`，執行 `ClaudeMonitor.Desktop.exe`，self-contained，無需另裝 .NET。先關閉舊版（含通知區圖示）再開新版；單一執行個體機制不允許同時開兩版。
+- VS Code：安裝 `claude-code-monitor-0.5.8.vsix`，既有視窗重新載入後生效；GitHub Release 與 Open VSX 沿用 toperking/claude-code-monitor。
+- Windows：解壓 `ClaudeMonitor-win-x64-0.5.8.zip`，執行 `ClaudeMonitor.Desktop.exe`，self-contained，無需另裝 .NET。先關閉舊版（含通知區圖示）再開新版；單一執行個體機制不允許同時開兩版。
 - RAG 本體、資料庫、帳號 token 與本機逐字稿不放入公開發佈包。
+- RAG 設定可一鍵產生 `rag-MCP.md`；只安裝到已存在的 Claude Code／Codex 資料夾下的 `rag-mcp` 技能目錄，略過未安裝的 AI。技能安裝不會註冊 MCP 或搬移資料庫。
