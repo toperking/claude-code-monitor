@@ -175,6 +175,12 @@
     ChipX: -650,
     ChipW: 140,
     ChipH: 28,
+    // 方塊尾巴的小標籤：寬、高、標籤間距、與方塊的距離、「+N」預留寬度
+    TailW: 122,
+    TailH: 20,
+    TailGap: 8,
+    TailLead: 16,
+    TailMoreW: 22,
     Hub: { x: -380, y: 0 },
     HubR: 44,
     Out: { x: 520, y: -30 },
@@ -470,6 +476,18 @@
     /** 某個方塊尾巴要顯示的小標籤。展開時下方已列出呼叫，就不再重複顯示。 */
     tailOf(p) {
       return p.expanded ? NoTailChips : tailChips(p.recent, this.nowMs);
+    }
+    /**
+     * 方塊「輸出連線」的起點 x：沒有小標籤時就是方塊右緣；有的話接在最後一張標籤（或「+N」）之後，
+     * 這樣 方塊 → 標籤 → 輸出手臂 仍是一條連續的點對點連線，不會被標籤蓋住。
+     */
+    tailEndX(p) {
+      const { chips, more } = this.tailOf(p);
+      if (chips.length === 0) return p.right;
+      const n = chips.length;
+      const end = p.left + Layout.PillW + Layout.TailLead + n * Layout.TailW + (n - 1) * Layout.TailGap + (more > 0 ? Layout.TailGap + Layout.TailMoreW : 0);
+      const k = Math.max(...chips.map((c) => c.alpha));
+      return p.right + (end - p.right) * k;
     }
     /** 距離「最後一次真實活動」多久（秒）。有 AI 在執行視為 0；從未有過活動為無限大。 */
     idleAge(now) {
@@ -989,8 +1007,8 @@
     };
   }
   var routeIn = (p) => route(p.agent ? { x: Layout.AgentX + Layout.AgentW / 2, y: p.agent.y } : { x: Layout.Hub.x + Layout.HubR, y: Layout.Hub.y }, { x: p.left, y: p.y });
-  var routeOut = (p, outputOffsetY = 0) => route({ x: p.right, y: p.y }, { x: Layout.Out.x - Layout.OutR, y: Layout.Out.y + outputOffsetY });
-  var routeRejected = (p, outputOffsetY = 0) => route({ x: p.right, y: p.y }, { x: Layout.Rej.x - 46, y: Layout.Rej.y + outputOffsetY });
+  var routeOut = (p, outputOffsetY = 0, startX = p.right) => route({ x: startX, y: p.y }, { x: Layout.Out.x - Layout.OutR, y: Layout.Out.y + outputOffsetY });
+  var routeRejected = (p, outputOffsetY = 0, startX = p.right) => route({ x: startX, y: p.y }, { x: Layout.Rej.x - 46, y: Layout.Rej.y + outputOffsetY });
   var agentKey = (sessionId, agentId) => sessionId + ":" + agentId;
   function pillInfo(tool) {
     const p = tool.split("__");
@@ -1621,8 +1639,9 @@
         const lv = p.runLevel;
         const pulse = m.reduceMotion ? 0 : 0.1 * Math.sin(this.ms / Breath);
         this.line(routeIn(p), p.color, 1.2 + 0.8 * lv, (0.2 + (0.35 + pulse) * lv) * p.fade, 12 * lv * p.fade);
-        this.line(routeOut(p, m.outputOffsetY), p.color, 1, (0.1 + (p.ok > 0 ? 0.1 : 0)) * p.fade, 0);
-        if (p.fail > 0) this.line(routeRejected(p, m.outputOffsetY), Palette.Fail, 1, 0.12 * p.fade, 0);
+        const startX = m.tailEndX(p);
+        this.line(routeOut(p, m.outputOffsetY, startX), p.color, 1, (0.1 + (p.ok > 0 ? 0.1 : 0)) * p.fade, 0);
+        if (p.fail > 0) this.line(routeRejected(p, m.outputOffsetY, startX), Palette.Fail, 1, 0.12 * p.fade, 0);
       }
     }
     drawChips(m) {
@@ -1696,8 +1715,8 @@
     drawTail(m, p) {
       const { chips, more } = m.tailOf(p);
       if (chips.length === 0) return;
-      const W = 122, H = 20, gap = 8;
-      let x = p.left + Layout.PillW + 16;
+      const W = Layout.TailW, H = Layout.TailH, gap = Layout.TailGap;
+      let x = p.left + Layout.PillW + Layout.TailLead;
       this.lineSeg(p.left + Layout.PillW, p.y, x, p.y, rgba(p.color, 0.5), 1);
       chips.forEach((chip, i) => {
         const col = chip.state === "run" ? Palette.Task : chip.state === "ok" ? Palette.Ok : Palette.Fail;
@@ -1718,6 +1737,7 @@
         x += W + gap;
       });
       if (more > 0) this.text("+" + more, x, p.y, 10, Palette.Sub, { mono: true });
+      this.circle(m.tailEndX(p), p.y, 3, rgba(p.color));
     }
     drawHub(m) {
       const { x, y } = Layout.Hub;

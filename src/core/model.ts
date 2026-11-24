@@ -30,6 +30,8 @@ export const Layout = {
   RowH: 52, PillW: 176, PillH: 32, GroupGap: 48,
   ExpandedW: 320, ExpandedRows: 5, ExpandedRowH: 18, ExpandedPad: 12,
   ChipX: -650, ChipW: 140, ChipH: 28,
+  // 方塊尾巴的小標籤：寬、高、標籤間距、與方塊的距離、「+N」預留寬度
+  TailW: 122, TailH: 20, TailGap: 8, TailLead: 16, TailMoreW: 22,
   Hub: { x: -380, y: 0 } as Pt,
   HubR: 44,
   Out: { x: 520, y: -30 } as Pt,
@@ -342,6 +344,20 @@ export class FlowModel {
   /** 某個方塊尾巴要顯示的小標籤。展開時下方已列出呼叫，就不再重複顯示。 */
   tailOf(p: FlowPill): TailChips {
     return p.expanded ? NoTailChips : tailChips(p.recent, this.nowMs);
+  }
+
+  /**
+   * 方塊「輸出連線」的起點 x：沒有小標籤時就是方塊右緣；有的話接在最後一張標籤（或「+N」）之後，
+   * 這樣 方塊 → 標籤 → 輸出手臂 仍是一條連續的點對點連線，不會被標籤蓋住。
+   */
+  tailEndX(p: FlowPill): number {
+    const { chips, more } = this.tailOf(p);
+    if (chips.length === 0) return p.right;
+    const n = chips.length;
+    const end = p.left + Layout.PillW + Layout.TailLead + n * Layout.TailW + (n - 1) * Layout.TailGap
+      + (more > 0 ? Layout.TailGap + Layout.TailMoreW : 0);
+    const k = Math.max(...chips.map(c => c.alpha)); // 標籤淡出時起點平滑退回方塊右緣
+    return p.right + (end - p.right) * k;
   }
 
   /** 距離「最後一次真實活動」多久（秒）。有 AI 在執行視為 0；從未有過活動為無限大。 */
@@ -883,8 +899,8 @@ export function cubic(c: [Pt, Pt, Pt, Pt], t: number): Pt {
 export const routeIn = (p: FlowPill): [Pt, Pt, Pt, Pt] => route(p.agent
   ? { x: Layout.AgentX + Layout.AgentW / 2, y: p.agent.y }
   : { x: Layout.Hub.x + Layout.HubR, y: Layout.Hub.y }, { x: p.left, y: p.y });
-export const routeOut = (p: FlowPill, outputOffsetY = 0): [Pt, Pt, Pt, Pt] => route({ x: p.right, y: p.y }, { x: Layout.Out.x - Layout.OutR, y: Layout.Out.y + outputOffsetY });
-export const routeRejected = (p: FlowPill, outputOffsetY = 0): [Pt, Pt, Pt, Pt] => route({ x: p.right, y: p.y }, { x: Layout.Rej.x - 46, y: Layout.Rej.y + outputOffsetY });
+export const routeOut = (p: FlowPill, outputOffsetY = 0, startX: number = p.right): [Pt, Pt, Pt, Pt] => route({ x: startX, y: p.y }, { x: Layout.Out.x - Layout.OutR, y: Layout.Out.y + outputOffsetY });
+export const routeRejected = (p: FlowPill, outputOffsetY = 0, startX: number = p.right): [Pt, Pt, Pt, Pt] => route({ x: startX, y: p.y }, { x: Layout.Rej.x - 46, y: Layout.Rej.y + outputOffsetY });
 
 // ── 文字與顏色 ─────────────────────────────────────────────────────────────
 export const agentKey = (sessionId: string, agentId: string): string => sessionId + ':' + agentId;

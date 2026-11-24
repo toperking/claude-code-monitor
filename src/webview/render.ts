@@ -376,8 +376,9 @@ export class FlowRenderer {
       const pulse = m.reduceMotion ? 0 : 0.1 * Math.sin(this.ms / Breath);
       // 在「平常 0.2」與「執行中 0.55（±0.1 的緩慢呼吸）」之間依 runLevel 平滑過渡，而不是開關
       this.line(routeIn(p), p.color, 1.2 + 0.8 * lv, (0.2 + (0.35 + pulse) * lv) * p.fade, 12 * lv * p.fade);
-      this.line(routeOut(p, m.outputOffsetY), p.color, 1, (0.1 + (p.ok > 0 ? 0.1 : 0)) * p.fade, 0);
-      if (p.fail > 0) this.line(routeRejected(p, m.outputOffsetY), Palette.Fail, 1, 0.12 * p.fade, 0);
+      const startX = m.tailEndX(p); // 有小標籤時，輸出連線從標籤尾端接出，不被標籤蓋住
+      this.line(routeOut(p, m.outputOffsetY, startX), p.color, 1, (0.1 + (p.ok > 0 ? 0.1 : 0)) * p.fade, 0);
+      if (p.fail > 0) this.line(routeRejected(p, m.outputOffsetY, startX), Palette.Fail, 1, 0.12 * p.fade, 0);
     }
   }
 
@@ -459,8 +460,8 @@ export class FlowRenderer {
   private drawTail(m: FlowModel, p: FlowPill): void {
     const { chips, more } = m.tailOf(p);
     if (chips.length === 0) return;
-    const W = 122, H = 20, gap = 8;
-    let x = p.left + Layout.PillW + 16;
+    const W = Layout.TailW, H = Layout.TailH, gap = Layout.TailGap;
+    let x = p.left + Layout.PillW + Layout.TailLead;
     this.lineSeg(p.left + Layout.PillW, p.y, x, p.y, rgba(p.color, 0.5), 1);
     chips.forEach((chip, i) => {
       const col = chip.state === 'run' ? Palette.Task : chip.state === 'ok' ? Palette.Ok : Palette.Fail;
@@ -481,6 +482,7 @@ export class FlowRenderer {
       x += W + gap;
     });
     if (more > 0) this.text('+' + more, x, p.y, 10, Palette.Sub, { mono: true });
+    this.circle(m.tailEndX(p), p.y, 3, rgba(p.color)); // 輸出連線的新起點
   }
 
   private drawHub(m: FlowModel): void {
