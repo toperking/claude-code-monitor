@@ -33,6 +33,27 @@ export interface TailChips {
 
 export const NoTailChips: TailChips = { chips: [], more: 0 };
 
+const FileVerbs: Readonly<Record<string, string>> = { Read: '讀取', Write: '寫入', Edit: '編輯', MultiEdit: '編輯' };
+
+/**
+ * 標籤上的文字：只用呼叫裡真實存在的欄位。
+ * 檔案工具 → 「讀取 檔名」；MCP 工具 → 「動作名 摘要」（例如 Screenshot）；其他 → 摘要，沒有摘要就用工具名。
+ */
+export function tailLabel(c: ToolCallDto): string {
+  const summary = c.summary.trim().replace(/…+$/, '');
+  const verb = FileVerbs[c.tool];
+  if (verb !== undefined && summary.length > 0) {
+    const name = summary.slice(Math.max(summary.lastIndexOf('\\'), summary.lastIndexOf('/')) + 1);
+    return `${verb} ${name.length > 0 ? name : summary}`;
+  }
+  const parts = c.tool.split('__');
+  if (parts[0] === 'mcp' && parts.length >= 3) {
+    const action = parts.slice(2).join('__');
+    return summary.length > 0 ? `${action} ${summary}` : action;
+  }
+  return summary.length > 0 ? summary : c.tool;
+}
+
 /**
  * 算出某個方塊目前該顯示哪些小標籤。
  * @param recent 該方塊最近的呼叫（順序不拘）

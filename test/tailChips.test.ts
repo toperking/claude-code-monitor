@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  TailChipMax, TailFadeMs, TailFailLingerMs, TailOkLingerMs, tailChips,
+  TailChipMax, TailFadeMs, TailFailLingerMs, TailOkLingerMs, tailChips, tailLabel,
 } from '../src/core/tailChips';
 import { ToolCallDto, ToolResult } from '../src/core/types';
 
@@ -12,6 +12,22 @@ function call(result: string, startAgoSec: number, durationSeconds = 0, summary 
     summary, result, durationSeconds, agentId: '',
   };
 }
+
+describe('tailLabel', () => {
+  const mk = (tool: string, summary = ''): ToolCallDto => ({ ...call(ToolResult.Ok, 1, 1, summary), tool });
+  it('檔案工具顯示動作與檔名，不顯示整條路徑', () => {
+    expect(tailLabel(mk('Read', 'd:\\Desktop\\docs\\FLOW.md'))).toBe('讀取 FLOW.md');
+    expect(tailLabel(mk('Edit', '/a/b/c.ts'))).toBe('編輯 c.ts');
+  });
+  it('MCP 工具顯示動作名，不顯示 mcp__ 前綴', () => {
+    expect(tailLabel(mk('mcp__windows-mcp__Screenshot'))).toBe('Screenshot');
+    expect(tailLabel(mk('mcp__local-rag__rag_search', 'FLOW'))).toBe('rag_search FLOW');
+  });
+  it('一般工具顯示摘要，沒有摘要就用工具名', () => {
+    expect(tailLabel(mk('Bash', 'dotnet build'))).toBe('dotnet build');
+    expect(tailLabel(mk('Bash', ''))).toBe('Bash');
+  });
+});
 
 describe('tailChips', () => {
   it('沒有時鐘或沒有呼叫時什麼都不顯示', () => {

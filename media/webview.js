@@ -126,6 +126,21 @@
   var TailFailLingerMs = 12e3;
   var TailFadeMs = 1e3;
   var NoTailChips = { chips: [], more: 0 };
+  var FileVerbs = { Read: "\u8B80\u53D6", Write: "\u5BEB\u5165", Edit: "\u7DE8\u8F2F", MultiEdit: "\u7DE8\u8F2F" };
+  function tailLabel(c) {
+    const summary = c.summary.trim().replace(/…+$/, "");
+    const verb = FileVerbs[c.tool];
+    if (verb !== void 0 && summary.length > 0) {
+      const name = summary.slice(Math.max(summary.lastIndexOf("\\"), summary.lastIndexOf("/")) + 1);
+      return `${verb} ${name.length > 0 ? name : summary}`;
+    }
+    const parts = c.tool.split("__");
+    if (parts[0] === "mcp" && parts.length >= 3) {
+      const action = parts.slice(2).join("__");
+      return summary.length > 0 ? `${action} ${summary}` : action;
+    }
+    return summary.length > 0 ? summary : c.tool;
+  }
   function tailChips(recent, now, max = TailChipMax) {
     if (now <= 0 || recent.length === 0) return NoTailChips;
     const eligible = [];
@@ -176,7 +191,7 @@
     ChipW: 140,
     ChipH: 28,
     // 方塊尾巴的小標籤：寬、高、標籤間距、與方塊的距離、「+N」預留寬度
-    TailW: 122,
+    TailW: 176,
     TailH: 20,
     TailGap: 8,
     TailLead: 16,
@@ -1524,6 +1539,13 @@
       this.ctx.font = `${bold ? "bold " : ""}${size}px ${mono ? MONO : UI}`;
       return this.ctx.measureText(s).width;
     }
+    /** 依像素寬度截短文字（中文字比英文寬），超過就以「…」結尾。 */
+    fitText(s, maxWidth, size) {
+      if (this.measure(s, size, false, true) <= maxWidth) return s;
+      let n = s.length;
+      while (n > 1 && this.measure(s.slice(0, n) + "\u2026", size, false, true) > maxWidth) n--;
+      return s.slice(0, n) + "\u2026";
+    }
     bezier(p) {
       const path = new Path2D();
       path.moveTo(p[0].x, p[0].y);
@@ -1729,9 +1751,10 @@
           this.fillRR(x, y, W, H, 6, rgba("#12161c"), rgba(col, chip.state === "run" ? 0.95 : 0.7), 1.2);
           const mark = chip.state === "run" ? "\u2026" : chip.state === "ok" ? "\u2713" : "\u2715";
           this.text(mark, x + 10, p.y, 10.5, col, { mono: true, bold: true, align: "center" });
-          const label = chip.call.summary.length > 0 ? chip.call.summary : chip.call.tool;
-          this.text(shorten(label, 11), x + 20, p.y, 10, Palette.Text, { mono: true });
-          this.text(num1(chip.seconds) + "s", x + W - 6, p.y, 9.5, Palette.Sub, { mono: true, align: "right" });
+          const secText = num1(chip.seconds) + "s";
+          const room = W - 20 - 8 - this.measure(secText, 9.5, false, true) - 6;
+          this.text(this.fitText(tailLabel(chip.call), room, 10), x + 20, p.y, 10, Palette.Text, { mono: true });
+          this.text(secText, x + W - 6, p.y, 9.5, Palette.Sub, { mono: true, align: "right" });
         });
         if (i < chips.length - 1) this.lineSeg(x + W, p.y, x + W + gap, p.y, rgba(col, 0.4 * chip.alpha), 1);
         x += W + gap;

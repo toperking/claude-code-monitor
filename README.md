@@ -100,6 +100,8 @@ npm run package       # 型別檢查 + 建置 + 打包成 .vsix
 
 結構：`src/core/`（掃描器、模型、泡泡；與畫面無關）、`src/webview/`（Canvas 繪製與頁面）、`src/extension.ts`（面板與定時掃描）。
 
+0.5.12：尾巴小標籤顯示「讀取 檔名」「Screenshot」這類動作與對象，標籤加寬。僅 VS Code 版。
+
 0.5.11：說明泡泡讓到尾巴小標籤之後，不再蓋住標籤。僅 VS Code 版。
 
 0.5.10：尾巴小標籤不再蓋住連線，輸出連線改從標籤尾端接出。僅 VS Code 版。

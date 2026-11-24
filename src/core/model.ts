@@ -31,7 +31,7 @@ export const Layout = {
   ExpandedW: 320, ExpandedRows: 5, ExpandedRowH: 18, ExpandedPad: 12,
   ChipX: -650, ChipW: 140, ChipH: 28,
   // 方塊尾巴的小標籤：寬、高、標籤間距、與方塊的距離、「+N」預留寬度
-  TailW: 122, TailH: 20, TailGap: 8, TailLead: 16, TailMoreW: 22,
+  TailW: 176, TailH: 20, TailGap: 8, TailLead: 16, TailMoreW: 22,
   Hub: { x: -380, y: 0 } as Pt,
   HubR: 44,
   Out: { x: 520, y: -30 } as Pt,

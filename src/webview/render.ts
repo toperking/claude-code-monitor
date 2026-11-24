@@ -3,6 +3,7 @@
 // 發光用「多層半透明線條」疊出來，不用 shadowBlur（避免每幀大量模糊運算）。
 
 import { BubbleAnchors, BubbleQueue } from '../core/bubbles';
+import { tailLabel } from '../core/tailChips';
 import { FlowSceneRow, flowSceneRows, sharedOutputY } from '../core/flowSceneLayout';
 import { BrainOutline, BrainFolds, BrainJunctions } from './brainGlyph';
 import { ArmorPaths } from './armorGlyph';
@@ -268,6 +269,14 @@ export class FlowRenderer {
     return this.ctx.measureText(s).width;
   }
 
+  /** 依像素寬度截短文字（中文字比英文寬），超過就以「…」結尾。 */
+  private fitText(s: string, maxWidth: number, size: number): string {
+    if (this.measure(s, size, false, true) <= maxWidth) return s;
+    let n = s.length;
+    while (n > 1 && this.measure(s.slice(0, n) + '…', size, false, true) > maxWidth) n--;
+    return s.slice(0, n) + '…';
+  }
+
   private bezier(p: [Pt, Pt, Pt, Pt]): Path2D {
     const path = new Path2D();
     path.moveTo(p[0].x, p[0].y);
@@ -474,9 +483,10 @@ export class FlowRenderer {
         this.fillRR(x, y, W, H, 6, rgba('#12161c'), rgba(col, chip.state === 'run' ? 0.95 : 0.7), 1.2);
         const mark = chip.state === 'run' ? '…' : chip.state === 'ok' ? '✓' : '✕';
         this.text(mark, x + 10, p.y, 10.5, col, { mono: true, bold: true, align: 'center' });
-        const label = chip.call.summary.length > 0 ? chip.call.summary : chip.call.tool;
-        this.text(shorten(label, 11), x + 20, p.y, 10, Palette.Text, { mono: true });
-        this.text(num1(chip.seconds) + 's', x + W - 6, p.y, 9.5, Palette.Sub, { mono: true, align: 'right' });
+        const secText = num1(chip.seconds) + 's';
+        const room = W - 20 - 8 - this.measure(secText, 9.5, false, true) - 6; // 標記、秒數與留白之外，文字能用的寬度
+        this.text(this.fitText(tailLabel(chip.call), room, 10), x + 20, p.y, 10, Palette.Text, { mono: true });
+        this.text(secText, x + W - 6, p.y, 9.5, Palette.Sub, { mono: true, align: 'right' });
       });
       if (i < chips.length - 1) this.lineSeg(x + W, p.y, x + W + gap, p.y, rgba(col, 0.4 * chip.alpha), 1);
       x += W + gap;
