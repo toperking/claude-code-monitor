@@ -31,7 +31,8 @@ export const Layout = {
   ExpandedW: 320, ExpandedRows: 5, ExpandedRowH: 18, ExpandedPad: 12,
   ChipX: -650, ChipW: 140, ChipH: 28,
   // 方塊尾巴的小標籤：寬、高、標籤間距、與方塊的距離、「+N」預留寬度
-  TailW: 176, TailH: 20, TailGap: 8, TailLead: 16, TailMoreW: 22,
+  // TailW 是單張標籤的最大寬度；多張串在一起時，總寬度不超過 TailBudget（每張自動縮窄，最窄 TailMinW）
+  TailW: 176, TailMinW: 110, TailBudget: 440, TailH: 20, TailGap: 8, TailLead: 16, TailMoreW: 22,
   Hub: { x: -380, y: 0 } as Pt,
   HubR: 44,
   Out: { x: 520, y: -30 } as Pt,
@@ -56,7 +57,7 @@ export const EscortScale = 0.8;
  */
 export const BurstSlackMs = 500;
 /** 出拳時拳頭尖端離身體中心多遠（單位）：側面攻擊時近側手伸到最長的位置。 */
-const AlienReachUnits = 18.1;
+export const AlienReachUnits = 18.1;
 
 export const Palette = {
   Doc: '#5eead4',
@@ -208,14 +209,14 @@ export function alienSpot(p: FlowPill, baseScale = 1): Pt {
  * 處理結果的停靠點：成功的送到 VERIFIED OUTPUT 圓環的左邊、失敗的送到 REJECTED 方塊的左邊，面向它出拳。
  * 同時有好幾位在處理時依 slot（0–4）上下錯開，不疊在一起。
  */
-export function alienOutSpot(fail: boolean, baseScale: number, slot: number): Pt {
+export function alienOutSpot(fail: boolean, baseScale: number, slot: number, dx = 0): Pt {
   const reach = AlienReachUnits * Layout.AlienUnit * baseScale + 20;
   const dy = (slot - 2) * (fail ? 12 : 26);
-  return fail ? { x: Layout.Rej.x - 46 - reach, y: Layout.Rej.y + dy } : { x: Layout.Out.x - Layout.OutR - reach, y: Layout.Out.y + dy };
+  return fail ? { x: Layout.Rej.x - 46 - reach + dx, y: Layout.Rej.y + dy } : { x: Layout.Out.x - Layout.OutR - reach + dx, y: Layout.Out.y + dy };
 }
-/** 處理時瞄準的點：圓環／方塊的左緣。 */
-export function outAim(fail: boolean, slot: number): Pt {
-  return fail ? { x: Layout.Rej.x - 46, y: Layout.Rej.y + (slot - 2) * 12 } : { x: Layout.Out.x - Layout.OutR * 0.92, y: Layout.Out.y + (slot - 2) * 26 };
+/** 處理時瞄準的點：圓環／方塊的左緣。`dx`：手／腳整組目前往右讓開的距離。 */
+export function outAim(fail: boolean, slot: number, dx = 0): Pt {
+  return fail ? { x: Layout.Rej.x - 46 + dx, y: Layout.Rej.y + (slot - 2) * 12 } : { x: Layout.Out.x - Layout.OutR * 0.92 + dx, y: Layout.Out.y + (slot - 2) * 26 };
 }
 
 export interface FlowStats { total: number; ok: number; fail: number; running: number }
@@ -318,6 +319,8 @@ export class FlowModel {
     this.o.modelKey = model;
   }
   outputOffsetY = 0;
+  /** 手／腳整組因標籤、泡泡而往右讓開的距離（動畫迴圈慢慢滑過去的值）。 */
+  outputOffsetX = 0;
   outputSlotOffset = 0;
   get freeIdle(): boolean { return this.o.freeIdle; }
   set freeIdle(v: boolean) { this.o.freeIdle = v; }
@@ -354,7 +357,7 @@ export class FlowModel {
     const { chips, more } = this.tailOf(p);
     if (chips.length === 0) return p.right;
     const n = chips.length;
-    const end = p.left + Layout.PillW + Layout.TailLead + n * Layout.TailW + (n - 1) * Layout.TailGap
+    const end = p.left + Layout.PillW + Layout.TailLead + n * tailChipWidth(tailWeight(chips)) + (n - 1) * Layout.TailGap
       + (more > 0 ? Layout.TailGap + Layout.TailMoreW : 0);
     const k = Math.max(...chips.map(c => c.alpha)); // 標籤淡出時起點平滑退回方塊右緣
     return p.right + (end - p.right) * k;
@@ -595,7 +598,7 @@ export class FlowModel {
 
       let goal: Pt;
       if (target !== null) { const s = alienSpot(target, u.baseScale); goal = { x: s.x - u.rank * Layout.SquadSpacing * u.baseScale, y: s.y }; } // 同一個方塊上的隊員往左排開
-      else if (u.deliverTarget !== null) { goal = alienOutSpot(u.deliverTarget === 'fail', u.baseScale, slot); goal = { x: goal.x, y: goal.y + this.outputOffsetY }; }
+      else if (u.deliverTarget !== null) { goal = alienOutSpot(u.deliverTarget === 'fail', u.baseScale, slot, this.outputOffsetX); goal = { x: goal.x, y: goal.y + this.outputOffsetY }; }
       else if (u.alive || agent !== null) { const h = alienHome(agent); goal = { x: h.x + u.patrolX + u.escortIndex * 52, y: h.y + u.patrolY }; }
       else goal = { x: u.x, y: u.y };
 
@@ -639,7 +642,7 @@ export class FlowModel {
         const len = Math.sqrt(ax * ax + ay * ay);
         if (len > 1) { u.aimX = ax / len; u.aimY = ay / len; }
       } else if (u.deliverTarget !== null) { // 處理結果：瞄準圓環／REJECTED 的左緣
-        const aim = outAim(u.deliverTarget === 'fail', slot);
+        const aim = outAim(u.deliverTarget === 'fail', slot, this.outputOffsetX);
         aim.y += this.outputOffsetY;
         const ax = aim.x - u.x, ay = aim.y - u.y;
         const len = Math.sqrt(ax * ax + ay * ay);
@@ -899,8 +902,20 @@ export function cubic(c: [Pt, Pt, Pt, Pt], t: number): Pt {
 export const routeIn = (p: FlowPill): [Pt, Pt, Pt, Pt] => route(p.agent
   ? { x: Layout.AgentX + Layout.AgentW / 2, y: p.agent.y }
   : { x: Layout.Hub.x + Layout.HubR, y: Layout.Hub.y }, { x: p.left, y: p.y });
-export const routeOut = (p: FlowPill, outputOffsetY = 0, startX: number = p.right): [Pt, Pt, Pt, Pt] => route({ x: startX, y: p.y }, { x: Layout.Out.x - Layout.OutR, y: Layout.Out.y + outputOffsetY });
-export const routeRejected = (p: FlowPill, outputOffsetY = 0, startX: number = p.right): [Pt, Pt, Pt, Pt] => route({ x: startX, y: p.y }, { x: Layout.Rej.x - 46, y: Layout.Rej.y + outputOffsetY });
+/** 標籤的「有效張數」：依透明度加權，淡出中的標籤只算一部分，寬度才不會在它消失的那一幀突然跳。 */
+export function tailWeight(chips: readonly { alpha: number }[]): number {
+  return Math.max(1, chips.reduce((sum, c) => sum + c.alpha, 0));
+}
+
+/** 一個方塊尾巴有 n 張（可為小數）標籤時，每張標籤的寬度：張數多就縮窄，串起來的總長不會一直往右伸。 */
+export function tailChipWidth(n: number): number {
+  if (n <= 1) return Layout.TailW;
+  const fit = (Layout.TailBudget - (n - 1) * Layout.TailGap) / n;
+  return Math.max(Layout.TailMinW, Math.min(Layout.TailW, fit));
+}
+
+export const routeOut = (p: FlowPill, outputOffsetY = 0, startX: number = p.right, outputOffsetX = 0): [Pt, Pt, Pt, Pt] => route({ x: startX, y: p.y }, { x: Layout.Out.x - Layout.OutR + outputOffsetX, y: Layout.Out.y + outputOffsetY });
+export const routeRejected = (p: FlowPill, outputOffsetY = 0, startX: number = p.right, outputOffsetX = 0): [Pt, Pt, Pt, Pt] => route({ x: startX, y: p.y }, { x: Layout.Rej.x - 46 + outputOffsetX, y: Layout.Rej.y + outputOffsetY });
 
 // ── 文字與顏色 ─────────────────────────────────────────────────────────────
 export const agentKey = (sessionId: string, agentId: string): string => sessionId + ':' + agentId;

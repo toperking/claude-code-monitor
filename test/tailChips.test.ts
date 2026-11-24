@@ -3,6 +3,7 @@ import {
   TailChipMax, TailFadeMs, TailFailLingerMs, TailOkLingerMs, tailChips, tailLabel,
 } from '../src/core/tailChips';
 import { ToolCallDto, ToolResult } from '../src/core/types';
+import { Layout, tailChipWidth } from '../src/core/model';
 
 const NOW = 1_000_000;
 let seq = 0;
@@ -12,6 +13,19 @@ function call(result: string, startAgoSec: number, durationSeconds = 0, summary 
     summary, result, durationSeconds, agentId: '',
   };
 }
+
+describe('tailChipWidth', () => {
+  it('一張用最大寬度；張數越多越窄，但串起來的總長有上限', () => {
+    expect(tailChipWidth(1)).toBe(Layout.TailW);
+    expect(tailChipWidth(2)).toBeLessThanOrEqual(Layout.TailW);
+    expect(tailChipWidth(3)).toBeLessThan(tailChipWidth(2));
+    for (let n = 1; n <= TailChipMax; n++) {
+      const total = n * tailChipWidth(n) + (n - 1) * Layout.TailGap;
+      expect(total).toBeLessThanOrEqual(Math.max(Layout.TailBudget, Layout.TailW));
+      expect(tailChipWidth(n)).toBeGreaterThanOrEqual(Layout.TailMinW);
+    }
+  });
+});
 
 describe('tailLabel', () => {
   const mk = (tool: string, summary = ''): ToolCallDto => ({ ...call(ToolResult.Ok, 1, 1, summary), tool });

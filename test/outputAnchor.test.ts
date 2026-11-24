@@ -5,7 +5,33 @@ import { emptySnapshot, SessionStatus } from '../src/core/types';
 import { fakeCanvas, newRecorded } from './fakeCanvas';
 import { sec } from './helpers';
 
+import { outputShiftFor, OutputShiftGap, OutputShiftMax } from '../src/core/flowSceneLayout';
+
 const frame = 1 / 30;
+
+describe('標籤與泡泡太長時，手／腳往右讓開', () => {
+  const left = 466; // 手最左邊
+  it('沒有東西擋到就不動', () => {
+    expect(outputShiftFor([], left)).toBe(0);
+    expect(outputShiftFor([300, 400], left)).toBe(0);
+  });
+  it('右緣超過手／腳（含空隙）就讓出剛好的距離', () => {
+    expect(outputShiftFor([left + 50], left)).toBe(50 + OutputShiftGap);
+    expect(outputShiftFor([300, left + 120, 200], left)).toBe(120 + OutputShiftGap); // 取最長的那條
+  });
+  it('有上限，不會讓到畫面外', () => {
+    expect(outputShiftFor([left + 5000], left)).toBe(OutputShiftMax);
+  });
+  it('目標回到 0 後，整組慢慢滑回原位（不是瞬間跳回）', () => {
+    const a = new OutputAnchor();
+    a.update(200, frame);
+    const x = a.update(0, frame);
+    expect(x).toBeLessThan(200);
+    expect(x).toBeGreaterThan(0);
+    for (let t = 0; t < 5; t += frame) a.update(0, frame);
+    expect(a.y).toBe(0);
+  });
+});
 
 function run(anchor: OutputAnchor, target: number, seconds: number): number[] {
   const ys: number[] = [];

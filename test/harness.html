@@ -55,6 +55,13 @@
       return { at: now, claudeHome: "C:\Users\me\.claude", claudeHomeFound: true, usageWindows: usage, lastLimitHit: null, agents: [], recentToolCalls: [c],
         sessions: [{ sessionId: SID, model: "claude-sonnet-5-5", status: "執行工具中", lastActivity: now }] };
     }
+    if (scene === "chips3") { // 三張標籤＋說明泡泡串在一起：看手／腳會不會讓開（每 6 秒多一筆新的 Read，觸發新泡泡）
+      const n = Math.floor((now - t0) / 6000);
+      const names = ["FLOW_REDESIGN.md", "CODEX_MONITOR.md", "release-notes-very-long-file-name-for-test.md", "CHANGELOG.md"];
+      const calls = [0, 1, 2].map(i => ({ toolUseId: "C" + (n + i), sessionId: SID, time: now - (2 - i) * 300, tool: "Read", summary: "d:\\docs\\" + names[(n + i) % 4], result: "成功", durationSeconds: 0.2, agentId: "" }));
+      return { at: now, claudeHome: "C:\Users\me\.claude", claudeHomeFound: true, usageWindows: usage, lastLimitHit: null,
+        sessions: [{ sessionId: SID, model: "claude-sonnet-5-5", status: "執行工具中", lastActivity: now }], recentToolCalls: calls, agents: [] };
+    }
     const base = { at: now, claudeHome: "C:\Users\me\.claude", claudeHomeFound: true, usageWindows: usage, lastLimitHit: null };
     const ag = [{ sessionId: SID, agentId: "a1b2c3d4", model: "claude-sonnet-5-5", status: "執行工具中", lastActivity: now, parentToolUseId: "t3", parentAgentId: "" }];
     const mk = (id, tool, summary, result, agentId = "") => ({ toolUseId: id, sessionId: SID, time: now, tool, summary, result, durationSeconds: 0, agentId });

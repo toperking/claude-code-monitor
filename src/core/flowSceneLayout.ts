@@ -22,6 +22,22 @@ export function sharedOutputY(rows: readonly FlowSceneRow[]): number {
   return (row?.y ?? 0) - 44;
 }
 
+/** 手／腳整組最多往右讓多遠（世界單位），以及標籤／泡泡右緣與手／腳之間要留的空隙。 */
+export const OutputShiftMax = 460;
+export const OutputShiftGap = 28;
+
+/**
+ * 標籤與說明泡泡往右伸長時，手／腳整組要往右讓多遠。
+ * @param rightEdges 各方塊（含標籤、泡泡）的右緣 x
+ * @param leftEdge 手／腳目前最左邊的 x（沒位移時）
+ * 沒有任何東西擋到就是 0；東西消失後目標回到 0，整組會慢慢滑回來。
+ */
+export function outputShiftFor(rightEdges: readonly number[], leftEdge: number): number {
+  if (rightEdges.length === 0) return 0;
+  const need = Math.max(...rightEdges) + OutputShiftGap - leftEdge;
+  return Math.min(OutputShiftMax, Math.max(0, need));
+}
+
 /**
  * 共用的手／腳整組的 Y 座標。`sharedOutputY` 是階梯式的（第一個可見的 provider 換人、某一列變高，
  * 目標就瞬間換位置），這裡讓目前位置「慢慢滑向」目標：先限速，靠近時再放慢（緩出），不會跳、不會過頭。
@@ -34,6 +50,7 @@ export class OutputAnchor {
   /** 單次最多當成這麼多秒；久沒畫（閒置）之後的第一張不會因為時間差一次走完。 */
   static readonly MaxStep = 0.1;
 
+  /** 目前位置（Y 用於上下滑動，同一個類別也拿來做 X 的左右滑動）。 */
   y = 0;
   private ready = false;
 

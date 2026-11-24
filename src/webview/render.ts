@@ -4,12 +4,12 @@
 
 import { BubbleAnchors, BubbleQueue } from '../core/bubbles';
 import { tailLabel } from '../core/tailChips';
-import { FlowSceneRow, flowSceneRows, sharedOutputY } from '../core/flowSceneLayout';
+import { FlowSceneRow, flowSceneRows, outputShiftFor, sharedOutputY } from '../core/flowSceneLayout';
 import { BrainOutline, BrainFolds, BrainJunctions } from './brainGlyph';
 import { ArmorPaths } from './armorGlyph';
 import {
   FlowAlien, FlowModel, FlowPill, Layout, Palette, Pt, cubic, formatModel, hhmmss, num1, pillInfo,
-  routeIn, routeOut, routeRejected, route,
+  routeIn, routeOut, routeRejected, route, tailChipWidth, tailWeight, AlienReachUnits,
 } from '../core/model';
 import { SessionStatus, ToolCallDto, ToolResult, isActive } from '../core/types';
 
@@ -37,6 +37,9 @@ function rgba(hex: string, alpha = 1): string {
   }
   return v;
 }
+
+/** 說明泡泡文字的最大寬度（像素，圖面座標）；超過以 ... 結尾。 */
+const BubbleMaxTextW = 300;
 
 const shorten = (s: string, n: number): string => (s.length > n ? s.slice(0, n - 1) + '…' : s);
 
@@ -88,6 +91,8 @@ export class FlowRenderer {
   private dpr = 1;
   private fit = 1;
   private camX = 0;
+  /** 手／腳整組目前往右讓開的距離（由動畫迴圈慢慢滑過去）。 */
+  private outX = 0;
   private camY = 0;
   private camK = 1;
   private ms = 0;
@@ -156,7 +161,7 @@ export class FlowRenderer {
   }
 
   private toWorld(x: number, y: number): Pt {
-    return { x: (x - (this.w / 2 + this.camX)) / this.fit, y: (y - (this.h / 2 + 30 + this.camY)) / this.fit };
+    return { x: (x - (this.w / 2 + this.camX)) / this.fit + this.outX / 2, y: (y - (this.h / 2 + 30 + this.camY)) / this.fit };
   }
 
   private hitScene(point: Pt): FlowPill | null {
@@ -169,8 +174,9 @@ export class FlowRenderer {
   }
 
   /** `outputY`：手／腳整組目前的 Y（動畫迴圈慢慢滑過去的值）；沒給就直接用目標位置。 */
-  renderScene(models: readonly FlowModel[], ms: number, outputY?: number): void {
+  renderScene(models: readonly FlowModel[], ms: number, outputY?: number, outputX = 0): void {
     this.rows = flowSceneRows(models);
+    this.outX = outputX;
     const outY = outputY ?? sharedOutputY(this.rows);
     this.ms = ms;
     const c = this.ctx;
@@ -180,24 +186,49 @@ export class FlowRenderer {
     if (this.w < 10 || this.h < 10 || this.rows.length === 0) return;
     this.drawGrid();
     const height = this.rows.reduce((sum, row) => sum + row.height, 0);
-    this.fit = Math.min(1.35, Math.max(0.1, Math.min(this.w / 1400, (this.h - 100) / height))) * this.camK;
+    this.fit = Math.min(1.35, Math.max(0.1, Math.min(this.w / (1400 + outputX), (this.h - 100) / height))) * this.camK;
     c.save();
     c.translate(this.w / 2 + this.camX, this.h / 2 + 30 + this.camY);
     c.scale(this.fit, this.fit);
+    c.translate(-outputX / 2, 0); // 手／腳右移時整張圖往左補回半個位移，兩邊都留在畫面內
     for (const [rowIndex, row] of this.rows.entries()) {
       const m = row.model;
       m.outputOffsetY = outY - row.y;
+      m.outputOffsetX = outputX;
       m.outputSlotOffset = rowIndex;
       c.save(); c.translate(0, row.y);
       this.alpha(m.source, () => { this.drawChipEdges(m); this.drawChips(m); this.drawHub(m); });
       this.alpha(1, () => { this.drawEdges(m); this.drawPills(m); this.drawParticles(m); this.drawAliens(m); this.drawBubbles(m); });
       c.restore();
     }
-    c.save(); c.translate(0, outY);
+    c.save(); c.translate(outputX, outY);
     const visibleModels = this.rows.map(row => row.model);
     this.alpha(Math.max(...visibleModels.map(m => m.sink)), () => { this.drawOutputs(visibleModels); this.drawSummary(visibleModels); });
     c.restore();
     c.restore();
+  }
+
+  /**
+   * 手／腳整組這一刻該往右讓多遠：看各方塊的尾巴標籤與說明泡泡伸到哪裡，擋到手／腳就讓開；
+   * 全部消失後回傳 0（呼叫端用 OutputAnchor 讓它慢慢滑過去、再滑回來）。
+   */
+  requiredOutputShiftX(models: readonly FlowModel[]): number {
+    const edges: number[] = [];
+    for (const m of models) {
+      for (const p of m.pillList) {
+        if (p.fade < 0.01) continue;
+        const end = m.tailEndX(p);
+        if (end > p.right + 1) edges.push(end);
+        for (const b of m.bubbles.items) {
+          if (b.anchorKey !== p.key) continue;
+          if (b.alpha(BubbleQueue.FadeSeconds) * p.fade < 0.02) continue;
+          const text = this.fitText(b.text, BubbleMaxTextW, 11, false);
+          edges.push(end + 18 + this.measure(text, 11, false, false) + 22);
+        }
+      }
+    }
+    // 送結果過去的小機甲站在圓環左邊更遠處，一併算進去，泡泡才不會蓋住它們
+    return outputShiftFor(edges, Layout.Out.x - Layout.OutR - (AlienReachUnits * Layout.AlienUnit + 20));
   }
 
   // ── 小工具 ───────────────────────────────────────────────────────────
@@ -269,12 +300,12 @@ export class FlowRenderer {
     return this.ctx.measureText(s).width;
   }
 
-  /** 依像素寬度截短文字（中文字比英文寬），超過就以「…」結尾。 */
-  private fitText(s: string, maxWidth: number, size: number): string {
-    if (this.measure(s, size, false, true) <= maxWidth) return s;
+  /** 依像素寬度截短文字（中文字比英文寬），超過就以「...」結尾。 */
+  private fitText(s: string, maxWidth: number, size: number, mono = true): string {
+    if (this.measure(s, size, false, mono) <= maxWidth) return s;
     let n = s.length;
-    while (n > 1 && this.measure(s.slice(0, n) + '…', size, false, true) > maxWidth) n--;
-    return s.slice(0, n) + '…';
+    while (n > 1 && this.measure(s.slice(0, n) + '...', size, false, mono) > maxWidth) n--;
+    return s.slice(0, n) + '...';
   }
 
   private bezier(p: [Pt, Pt, Pt, Pt]): Path2D {
@@ -386,8 +417,8 @@ export class FlowRenderer {
       // 在「平常 0.2」與「執行中 0.55（±0.1 的緩慢呼吸）」之間依 runLevel 平滑過渡，而不是開關
       this.line(routeIn(p), p.color, 1.2 + 0.8 * lv, (0.2 + (0.35 + pulse) * lv) * p.fade, 12 * lv * p.fade);
       const startX = m.tailEndX(p); // 有小標籤時，輸出連線從標籤尾端接出，不被標籤蓋住
-      this.line(routeOut(p, m.outputOffsetY, startX), p.color, 1, (0.1 + (p.ok > 0 ? 0.1 : 0)) * p.fade, 0);
-      if (p.fail > 0) this.line(routeRejected(p, m.outputOffsetY, startX), Palette.Fail, 1, 0.12 * p.fade, 0);
+      this.line(routeOut(p, m.outputOffsetY, startX, m.outputOffsetX), p.color, 1, (0.1 + (p.ok > 0 ? 0.1 : 0)) * p.fade, 0);
+      if (p.fail > 0) this.line(routeRejected(p, m.outputOffsetY, startX, m.outputOffsetX), Palette.Fail, 1, 0.12 * p.fade, 0);
     }
   }
 
@@ -469,7 +500,7 @@ export class FlowRenderer {
   private drawTail(m: FlowModel, p: FlowPill): void {
     const { chips, more } = m.tailOf(p);
     if (chips.length === 0) return;
-    const W = Layout.TailW, H = Layout.TailH, gap = Layout.TailGap;
+    const W = tailChipWidth(tailWeight(chips)), H = Layout.TailH, gap = Layout.TailGap;
     let x = p.left + Layout.PillW + Layout.TailLead;
     this.lineSeg(p.left + Layout.PillW, p.y, x, p.y, rgba(p.color, 0.5), 1);
     chips.forEach((chip, i) => {
@@ -586,7 +617,8 @@ export class FlowRenderer {
       const alpha = b.alpha(BubbleQueue.FadeSeconds) * follow;
       if (alpha < 0.02) continue;
 
-      const w = this.measure(b.text, 11, false, false) + 22;
+      const text = this.fitText(b.text, BubbleMaxTextW, 11, false); // 字太多就以 ... 結尾，泡泡不會無限變寬
+      const w = this.measure(text, 11, false, false) + 22;
       let bx: number, by: number;
       const tailPath = new Path2D();
       if (pill) {
@@ -599,9 +631,9 @@ export class FlowRenderer {
         }
       } else if (b.anchorKey === BubbleAnchors.Rejected) {
         const cy = Layout.Rej.y + m.outputOffsetY;
-        bx = Layout.Rej.x - 105 - w; by = cy - h / 2 + dy;
+        bx = Layout.Rej.x + m.outputOffsetX - 105 - w; by = cy - h / 2 + dy;
         if (nth === 0) {
-          tailPath.moveTo(Layout.Rej.x - 52, cy); tailPath.lineTo(bx + w - 1, cy - tail); tailPath.lineTo(bx + w - 1, cy + tail); tailPath.closePath();
+          tailPath.moveTo(Layout.Rej.x + m.outputOffsetX - 52, cy); tailPath.lineTo(bx + w - 1, cy - tail); tailPath.lineTo(bx + w - 1, cy + tail); tailPath.closePath();
         }
       } else {
         // 子代理與 AI 主節點：泡泡在上方，尾巴朝下；REJECTED：泡泡在下方，尾巴朝上
@@ -609,7 +641,7 @@ export class FlowRenderer {
         const [cx, top, tipY, below] = agent
           ? [Layout.AgentX, agent.y - Layout.AgentH / 2 - 14 - h, agent.y - Layout.AgentH / 2 - 3, false] as const
           : hub ? [Layout.Hub.x, Layout.Hub.y - Layout.HubR - 18 - h, Layout.Hub.y - Layout.HubR - 5, false] as const
-          : [Layout.Rej.x, Layout.Rej.y + 15 + 14, Layout.Rej.y + 17, true] as const;
+          : [Layout.Rej.x + m.outputOffsetX, Layout.Rej.y + 15 + 14, Layout.Rej.y + 17, true] as const;
         bx = cx - w / 2; by = below ? top + dy : top - dy; // 往外排開：上方的往上疊、下方的往下疊
         if (nth === 0) {
           const baseY = below ? by + 1 : by + h - 1;
@@ -620,7 +652,7 @@ export class FlowRenderer {
         this.glowRect(bx, by, w, h, 9, b.color, 0.8, 6);
         this.fillPath(tailPath, rgba('#161b22'), rgba(b.color), 1.2); // 尾巴先畫，方塊蓋在上面，兩者接縫就看不到
         this.fillRR(bx, by, w, h, 9, rgba('#161b22'), rgba(b.color), 1.2);
-        this.text(b.text, bx + w / 2, by + h / 2, 11, Palette.Text, { align: 'center' });
+        this.text(text, bx + w / 2, by + h / 2, 11, Palette.Text, { align: 'center' });
       });
     }
   }
@@ -629,7 +661,7 @@ export class FlowRenderer {
     for (const pt of m.particles) {
       const p = m.pillList.find(x => x.key === pt.pillKey);
       if (!p) continue;
-      const path = pt.kind === 'in' ? routeIn(p) : pt.kind === 'out' ? routeOut(p, m.outputOffsetY) : routeRejected(p, m.outputOffsetY);
+      const path = pt.kind === 'in' ? routeIn(p) : pt.kind === 'out' ? routeOut(p, m.outputOffsetY, p.right, m.outputOffsetX) : routeRejected(p, m.outputOffsetY, p.right, m.outputOffsetX);
       for (let i = 8; i >= 0; i--) { // 彗星尾巴
         const q = cubic(path, Math.min(1, Math.max(0, pt.t - i * 0.03)));
         const r = 4.6 - i * 0.4;

@@ -191,7 +191,10 @@
     ChipW: 140,
     ChipH: 28,
     // 方塊尾巴的小標籤：寬、高、標籤間距、與方塊的距離、「+N」預留寬度
+    // TailW 是單張標籤的最大寬度；多張串在一起時，總寬度不超過 TailBudget（每張自動縮窄，最窄 TailMinW）
     TailW: 176,
+    TailMinW: 110,
+    TailBudget: 440,
     TailH: 20,
     TailGap: 8,
     TailLead: 16,
@@ -366,13 +369,13 @@
   function alienSpot(p, baseScale = 1) {
     return { x: p.left - AlienReachUnits * Layout.AlienUnit * baseScale - 20, y: p.y };
   }
-  function alienOutSpot(fail, baseScale, slot) {
+  function alienOutSpot(fail, baseScale, slot, dx = 0) {
     const reach = AlienReachUnits * Layout.AlienUnit * baseScale + 20;
     const dy = (slot - 2) * (fail ? 12 : 26);
-    return fail ? { x: Layout.Rej.x - 46 - reach, y: Layout.Rej.y + dy } : { x: Layout.Out.x - Layout.OutR - reach, y: Layout.Out.y + dy };
+    return fail ? { x: Layout.Rej.x - 46 - reach + dx, y: Layout.Rej.y + dy } : { x: Layout.Out.x - Layout.OutR - reach + dx, y: Layout.Out.y + dy };
   }
-  function outAim(fail, slot) {
-    return fail ? { x: Layout.Rej.x - 46, y: Layout.Rej.y + (slot - 2) * 12 } : { x: Layout.Out.x - Layout.OutR * 0.92, y: Layout.Out.y + (slot - 2) * 26 };
+  function outAim(fail, slot, dx = 0) {
+    return fail ? { x: Layout.Rej.x - 46 + dx, y: Layout.Rej.y + (slot - 2) * 12 } : { x: Layout.Out.x - Layout.OutR * 0.92 + dx, y: Layout.Out.y + (slot - 2) * 26 };
   }
   var defaultOptions = () => ({
     windowMinutes: 30,
@@ -456,6 +459,8 @@
       this.o.modelKey = model2;
     }
     outputOffsetY = 0;
+    /** 手／腳整組因標籤、泡泡而往右讓開的距離（動畫迴圈慢慢滑過去的值）。 */
+    outputOffsetX = 0;
     outputSlotOffset = 0;
     get freeIdle() {
       return this.o.freeIdle;
@@ -500,7 +505,7 @@
       const { chips, more } = this.tailOf(p);
       if (chips.length === 0) return p.right;
       const n = chips.length;
-      const end = p.left + Layout.PillW + Layout.TailLead + n * Layout.TailW + (n - 1) * Layout.TailGap + (more > 0 ? Layout.TailGap + Layout.TailMoreW : 0);
+      const end = p.left + Layout.PillW + Layout.TailLead + n * tailChipWidth(tailWeight(chips)) + (n - 1) * Layout.TailGap + (more > 0 ? Layout.TailGap + Layout.TailMoreW : 0);
       const k = Math.max(...chips.map((c) => c.alpha));
       return p.right + (end - p.right) * k;
     }
@@ -725,7 +730,7 @@
           const s = alienSpot(target, u.baseScale);
           goal = { x: s.x - u.rank * Layout.SquadSpacing * u.baseScale, y: s.y };
         } else if (u.deliverTarget !== null) {
-          goal = alienOutSpot(u.deliverTarget === "fail", u.baseScale, slot);
+          goal = alienOutSpot(u.deliverTarget === "fail", u.baseScale, slot, this.outputOffsetX);
           goal = { x: goal.x, y: goal.y + this.outputOffsetY };
         } else if (u.alive || agent !== null) {
           const h = alienHome(agent);
@@ -776,7 +781,7 @@
             u.aimY = ay / len;
           }
         } else if (u.deliverTarget !== null) {
-          const aim = outAim(u.deliverTarget === "fail", slot);
+          const aim = outAim(u.deliverTarget === "fail", slot, this.outputOffsetX);
           aim.y += this.outputOffsetY;
           const ax = aim.x - u.x, ay = aim.y - u.y;
           const len = Math.sqrt(ax * ax + ay * ay);
@@ -1022,8 +1027,16 @@
     };
   }
   var routeIn = (p) => route(p.agent ? { x: Layout.AgentX + Layout.AgentW / 2, y: p.agent.y } : { x: Layout.Hub.x + Layout.HubR, y: Layout.Hub.y }, { x: p.left, y: p.y });
-  var routeOut = (p, outputOffsetY = 0, startX = p.right) => route({ x: startX, y: p.y }, { x: Layout.Out.x - Layout.OutR, y: Layout.Out.y + outputOffsetY });
-  var routeRejected = (p, outputOffsetY = 0, startX = p.right) => route({ x: startX, y: p.y }, { x: Layout.Rej.x - 46, y: Layout.Rej.y + outputOffsetY });
+  function tailWeight(chips) {
+    return Math.max(1, chips.reduce((sum, c) => sum + c.alpha, 0));
+  }
+  function tailChipWidth(n) {
+    if (n <= 1) return Layout.TailW;
+    const fit = (Layout.TailBudget - (n - 1) * Layout.TailGap) / n;
+    return Math.max(Layout.TailMinW, Math.min(Layout.TailW, fit));
+  }
+  var routeOut = (p, outputOffsetY = 0, startX = p.right, outputOffsetX = 0) => route({ x: startX, y: p.y }, { x: Layout.Out.x - Layout.OutR + outputOffsetX, y: Layout.Out.y + outputOffsetY });
+  var routeRejected = (p, outputOffsetY = 0, startX = p.right, outputOffsetX = 0) => route({ x: startX, y: p.y }, { x: Layout.Rej.x - 46 + outputOffsetX, y: Layout.Rej.y + outputOffsetY });
   var agentKey = (sessionId, agentId) => sessionId + ":" + agentId;
   function pillInfo(tool) {
     const p = tool.split("__");
@@ -1160,6 +1173,13 @@
     const row = rows.find((r) => r.model.source > 5e-3) ?? rows.find((r) => r.model.sink > 5e-3) ?? rows[0];
     return (row?.y ?? 0) - 44;
   }
+  var OutputShiftMax = 460;
+  var OutputShiftGap = 28;
+  function outputShiftFor(rightEdges, leftEdge) {
+    if (rightEdges.length === 0) return 0;
+    const need = Math.max(...rightEdges) + OutputShiftGap - leftEdge;
+    return Math.min(OutputShiftMax, Math.max(0, need));
+  }
   var OutputAnchor = class _OutputAnchor {
     /** 靠近比例：越大越快（每秒約剩下 e^-Rate 沒走完）。 */
     static Rate = 2;
@@ -1167,6 +1187,7 @@
     static MaxSpeed = 450;
     /** 單次最多當成這麼多秒；久沒畫（閒置）之後的第一張不會因為時間差一次走完。 */
     static MaxStep = 0.1;
+    /** 目前位置（Y 用於上下滑動，同一個類別也拿來做 X 的左右滑動）。 */
     y = 0;
     ready = false;
     /** 還沒到目標，畫面需要繼續高頻重畫。 */
@@ -1246,6 +1267,7 @@
     }
     return v;
   }
+  var BubbleMaxTextW = 300;
   var shorten = (s, n) => s.length > n ? s.slice(0, n - 1) + "\u2026" : s;
   function rowLabel(c) {
     const parts = c.tool.split("__");
@@ -1359,6 +1381,8 @@
     dpr = 1;
     fit = 1;
     camX = 0;
+    /** 手／腳整組目前往右讓開的距離（由動畫迴圈慢慢滑過去）。 */
+    outX = 0;
     camY = 0;
     camK = 1;
     ms = 0;
@@ -1387,7 +1411,7 @@
       this.canvas.height = Math.max(1, Math.round(h * dpr));
     }
     toWorld(x, y) {
-      return { x: (x - (this.w / 2 + this.camX)) / this.fit, y: (y - (this.h / 2 + 30 + this.camY)) / this.fit };
+      return { x: (x - (this.w / 2 + this.camX)) / this.fit + this.outX / 2, y: (y - (this.h / 2 + 30 + this.camY)) / this.fit };
     }
     hitScene(point) {
       if (this.rows.length === 0) return this.model?.hitPill(point.x, point.y) ?? null;
@@ -1398,8 +1422,9 @@
       return null;
     }
     /** `outputY`：手／腳整組目前的 Y（動畫迴圈慢慢滑過去的值）；沒給就直接用目標位置。 */
-    renderScene(models2, ms, outputY) {
+    renderScene(models2, ms, outputY, outputX = 0) {
       this.rows = flowSceneRows(models2);
+      this.outX = outputX;
       const outY = outputY ?? sharedOutputY(this.rows);
       this.ms = ms;
       const c = this.ctx;
@@ -1410,13 +1435,15 @@
       if (this.w < 10 || this.h < 10 || this.rows.length === 0) return;
       this.drawGrid();
       const height = this.rows.reduce((sum, row) => sum + row.height, 0);
-      this.fit = Math.min(1.35, Math.max(0.1, Math.min(this.w / 1400, (this.h - 100) / height))) * this.camK;
+      this.fit = Math.min(1.35, Math.max(0.1, Math.min(this.w / (1400 + outputX), (this.h - 100) / height))) * this.camK;
       c.save();
       c.translate(this.w / 2 + this.camX, this.h / 2 + 30 + this.camY);
       c.scale(this.fit, this.fit);
+      c.translate(-outputX / 2, 0);
       for (const [rowIndex, row] of this.rows.entries()) {
         const m = row.model;
         m.outputOffsetY = outY - row.y;
+        m.outputOffsetX = outputX;
         m.outputSlotOffset = rowIndex;
         c.save();
         c.translate(0, row.y);
@@ -1435,7 +1462,7 @@
         c.restore();
       }
       c.save();
-      c.translate(0, outY);
+      c.translate(outputX, outY);
       const visibleModels = this.rows.map((row) => row.model);
       this.alpha(Math.max(...visibleModels.map((m) => m.sink)), () => {
         this.drawOutputs(visibleModels);
@@ -1443,6 +1470,27 @@
       });
       c.restore();
       c.restore();
+    }
+    /**
+     * 手／腳整組這一刻該往右讓多遠：看各方塊的尾巴標籤與說明泡泡伸到哪裡，擋到手／腳就讓開；
+     * 全部消失後回傳 0（呼叫端用 OutputAnchor 讓它慢慢滑過去、再滑回來）。
+     */
+    requiredOutputShiftX(models2) {
+      const edges = [];
+      for (const m of models2) {
+        for (const p of m.pillList) {
+          if (p.fade < 0.01) continue;
+          const end = m.tailEndX(p);
+          if (end > p.right + 1) edges.push(end);
+          for (const b of m.bubbles.items) {
+            if (b.anchorKey !== p.key) continue;
+            if (b.alpha(BubbleQueue.FadeSeconds) * p.fade < 0.02) continue;
+            const text = this.fitText(b.text, BubbleMaxTextW, 11, false);
+            edges.push(end + 18 + this.measure(text, 11, false, false) + 22);
+          }
+        }
+      }
+      return outputShiftFor(edges, Layout.Out.x - Layout.OutR - (AlienReachUnits * Layout.AlienUnit + 20));
     }
     // ── 小工具 ───────────────────────────────────────────────────────────
     alpha(a, draw) {
@@ -1539,12 +1587,12 @@
       this.ctx.font = `${bold ? "bold " : ""}${size}px ${mono ? MONO : UI}`;
       return this.ctx.measureText(s).width;
     }
-    /** 依像素寬度截短文字（中文字比英文寬），超過就以「…」結尾。 */
-    fitText(s, maxWidth, size) {
-      if (this.measure(s, size, false, true) <= maxWidth) return s;
+    /** 依像素寬度截短文字（中文字比英文寬），超過就以「...」結尾。 */
+    fitText(s, maxWidth, size, mono = true) {
+      if (this.measure(s, size, false, mono) <= maxWidth) return s;
       let n = s.length;
-      while (n > 1 && this.measure(s.slice(0, n) + "\u2026", size, false, true) > maxWidth) n--;
-      return s.slice(0, n) + "\u2026";
+      while (n > 1 && this.measure(s.slice(0, n) + "...", size, false, mono) > maxWidth) n--;
+      return s.slice(0, n) + "...";
     }
     bezier(p) {
       const path = new Path2D();
@@ -1662,8 +1710,8 @@
         const pulse = m.reduceMotion ? 0 : 0.1 * Math.sin(this.ms / Breath);
         this.line(routeIn(p), p.color, 1.2 + 0.8 * lv, (0.2 + (0.35 + pulse) * lv) * p.fade, 12 * lv * p.fade);
         const startX = m.tailEndX(p);
-        this.line(routeOut(p, m.outputOffsetY, startX), p.color, 1, (0.1 + (p.ok > 0 ? 0.1 : 0)) * p.fade, 0);
-        if (p.fail > 0) this.line(routeRejected(p, m.outputOffsetY, startX), Palette.Fail, 1, 0.12 * p.fade, 0);
+        this.line(routeOut(p, m.outputOffsetY, startX, m.outputOffsetX), p.color, 1, (0.1 + (p.ok > 0 ? 0.1 : 0)) * p.fade, 0);
+        if (p.fail > 0) this.line(routeRejected(p, m.outputOffsetY, startX, m.outputOffsetX), Palette.Fail, 1, 0.12 * p.fade, 0);
       }
     }
     drawChips(m) {
@@ -1737,7 +1785,7 @@
     drawTail(m, p) {
       const { chips, more } = m.tailOf(p);
       if (chips.length === 0) return;
-      const W = Layout.TailW, H = Layout.TailH, gap = Layout.TailGap;
+      const W = tailChipWidth(tailWeight(chips)), H = Layout.TailH, gap = Layout.TailGap;
       let x = p.left + Layout.PillW + Layout.TailLead;
       this.lineSeg(p.left + Layout.PillW, p.y, x, p.y, rgba(p.color, 0.5), 1);
       chips.forEach((chip, i) => {
@@ -1854,7 +1902,8 @@
         const follow = pill?.fade ?? agent?.fade ?? (b.anchorKey === BubbleAnchors.Hub ? m.source : m.sink);
         const alpha = b.alpha(BubbleQueue.FadeSeconds) * follow;
         if (alpha < 0.02) continue;
-        const w = this.measure(b.text, 11, false, false) + 22;
+        const text = this.fitText(b.text, BubbleMaxTextW, 11, false);
+        const w = this.measure(text, 11, false, false) + 22;
         let bx, by;
         const tailPath = new Path2D();
         if (pill) {
@@ -1869,17 +1918,17 @@
           }
         } else if (b.anchorKey === BubbleAnchors.Rejected) {
           const cy = Layout.Rej.y + m.outputOffsetY;
-          bx = Layout.Rej.x - 105 - w;
+          bx = Layout.Rej.x + m.outputOffsetX - 105 - w;
           by = cy - h / 2 + dy;
           if (nth === 0) {
-            tailPath.moveTo(Layout.Rej.x - 52, cy);
+            tailPath.moveTo(Layout.Rej.x + m.outputOffsetX - 52, cy);
             tailPath.lineTo(bx + w - 1, cy - tail);
             tailPath.lineTo(bx + w - 1, cy + tail);
             tailPath.closePath();
           }
         } else {
           const hub = b.anchorKey === BubbleAnchors.Hub;
-          const [cx, top, tipY, below] = agent ? [Layout.AgentX, agent.y - Layout.AgentH / 2 - 14 - h, agent.y - Layout.AgentH / 2 - 3, false] : hub ? [Layout.Hub.x, Layout.Hub.y - Layout.HubR - 18 - h, Layout.Hub.y - Layout.HubR - 5, false] : [Layout.Rej.x, Layout.Rej.y + 15 + 14, Layout.Rej.y + 17, true];
+          const [cx, top, tipY, below] = agent ? [Layout.AgentX, agent.y - Layout.AgentH / 2 - 14 - h, agent.y - Layout.AgentH / 2 - 3, false] : hub ? [Layout.Hub.x, Layout.Hub.y - Layout.HubR - 18 - h, Layout.Hub.y - Layout.HubR - 5, false] : [Layout.Rej.x + m.outputOffsetX, Layout.Rej.y + 15 + 14, Layout.Rej.y + 17, true];
           bx = cx - w / 2;
           by = below ? top + dy : top - dy;
           if (nth === 0) {
@@ -1894,7 +1943,7 @@
           this.glowRect(bx, by, w, h, 9, b.color, 0.8, 6);
           this.fillPath(tailPath, rgba("#161b22"), rgba(b.color), 1.2);
           this.fillRR(bx, by, w, h, 9, rgba("#161b22"), rgba(b.color), 1.2);
-          this.text(b.text, bx + w / 2, by + h / 2, 11, Palette.Text, { align: "center" });
+          this.text(text, bx + w / 2, by + h / 2, 11, Palette.Text, { align: "center" });
         });
       }
     }
@@ -1902,7 +1951,7 @@
       for (const pt of m.particles) {
         const p = m.pillList.find((x) => x.key === pt.pillKey);
         if (!p) continue;
-        const path = pt.kind === "in" ? routeIn(p) : pt.kind === "out" ? routeOut(p, m.outputOffsetY) : routeRejected(p, m.outputOffsetY);
+        const path = pt.kind === "in" ? routeIn(p) : pt.kind === "out" ? routeOut(p, m.outputOffsetY, p.right, m.outputOffsetX) : routeRejected(p, m.outputOffsetY, p.right, m.outputOffsetX);
         for (let i = 8; i >= 0; i--) {
           const q = cubic(path, Math.min(1, Math.max(0, pt.t - i * 0.03)));
           const r = 4.6 - i * 0.4;
@@ -2447,14 +2496,21 @@
   var renderStats = { frames: 0, ms: 0 };
   window.renderStats = renderStats;
   var outputAnchor = new OutputAnchor();
+  var outputAnchorX = new OutputAnchor();
+  var targetX = 0;
   var lastDraw = 0;
   var frame = (ts) => {
-    const moving = outputAnchor.isMoving(sharedOutputY(flowSceneRows(models)));
+    const moving = outputAnchor.isMoving(sharedOutputY(flowSceneRows(models))) || outputAnchorX.isMoving(targetX);
     const interval = models.some((m) => m.animating) || moving ? 1e3 / maxFps : 1e3;
     if (lastDraw === 0 || ts - lastDraw >= interval - 2) {
       const dt = lastDraw === 0 ? 0 : (ts - lastDraw) / 1e3;
       lastDraw = ts;
       const t0 = performance.now();
+      targetX = renderer.requiredOutputShiftX(models);
+      const outputX = outputAnchorX.update(targetX, dt, models.every((m) => m.reduceMotion));
+      models.forEach((m) => {
+        m.outputOffsetX = outputX;
+      });
       const rows = flowSceneRows(models);
       const outputY = outputAnchor.update(sharedOutputY(rows), dt, models.every((m) => m.reduceMotion));
       rows.forEach((row, i) => {
@@ -2462,7 +2518,7 @@
         row.model.outputSlotOffset = i;
       });
       models.forEach((m) => m.tick(dt, Date.now()));
-      renderer.renderScene(models, ts, outputY);
+      renderer.renderScene(models, ts, outputY, outputX);
       renderStats.frames++;
       renderStats.ms += performance.now() - t0;
     }
