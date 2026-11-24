@@ -7,6 +7,7 @@
 import { BubbleAnchors, BubbleQueue } from './bubbles';
 import { AiProvider, providerSnapshot } from './providerSnapshot';
 import { isRagWrite, ragActionOf } from './ragTools';
+import { NoTailChips, TailChips, tailChips } from './tailChips';
 import {
   AgentDto, LimitHitDto, MonitorSnapshot, SessionDto, ToolCallDto, ToolResult, isActive,
 } from './types';
@@ -331,7 +332,16 @@ export class FlowModel {
    */
   get animating(): boolean {
     return this.busy || this.isLive || this.source > 0.002 || this.sink > 0.002 || this.alienLevelValue > 0.002
-      || this.particlesList.length > 0 || this.bubbles.items.length > 0 || this.ordered.some(p => p.fade > 0.01);
+      || this.particlesList.length > 0 || this.bubbles.items.length > 0 || this.ordered.some(p => p.fade > 0.01)
+      || this.ordered.some(p => this.tailOf(p).chips.length > 0); // 小標籤淡出期間要維持高頻更新
+  }
+
+  /** 最近一次 tick 收到的時間（毫秒時間戳）；小標籤用它判斷「剛結束」。 */
+  nowMs = 0;
+
+  /** 某個方塊尾巴要顯示的小標籤。展開時下方已列出呼叫，就不再重複顯示。 */
+  tailOf(p: FlowPill): TailChips {
+    return p.expanded ? NoTailChips : tailChips(p.recent, this.nowMs);
   }
 
   /** 距離「最後一次真實活動」多久（秒）。有 AI 在執行視為 0；從未有過活動為無限大。 */
@@ -769,6 +779,7 @@ export class FlowModel {
   tick(dtRaw: number, now: number): void {
     const dt = clamp(dtRaw, 0, 0.05);
     this.clock += dt;
+    this.nowMs = now;
     this.bubbles.tick(dt, k => BubbleAnchors.isFixed(k) || this.pills.has(k) || this.agentMap.has(k));
     const list = this.ordered;
 

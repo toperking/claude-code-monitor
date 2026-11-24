@@ -416,6 +416,7 @@ export class FlowRenderer {
         this.text(runLabel ? `…${p.running}` : '×' + p.count, x + p.w - 28, y + Layout.PillH / 2, 10, runLabel ? Palette.Warn : Palette.Sub, { mono: true, align: 'right' });
         this.text(p.expanded ? '▾' : '▸', x + p.w - 14, y + Layout.PillH / 2, 10, hover ? Palette.Text : Palette.Dim, { mono: true, align: 'center' });
         this.drawRows(p, x, y, corner);
+        this.drawTail(m, p);
         // 兩端連接點
         this.circle(x, p.y, 3, rgba(p.color));
         this.circle(x + p.w, p.y, 3, rgba(p.color));
@@ -452,6 +453,34 @@ export class FlowRenderer {
       this.text(cl.result === ToolResult.Running ? '…' : num1(cl.durationSeconds) + 's', x + p.w - 12, cy, 10.5, Palette.Sub, { mono: true, align: 'right' });
     });
     c.restore();
+  }
+
+  // 方塊尾巴的小標籤：執行中（橘、發光脈動）／剛成功（綠 ✓）／剛失敗（紅 ✕），結束一段時間後淡出
+  private drawTail(m: FlowModel, p: FlowPill): void {
+    const { chips, more } = m.tailOf(p);
+    if (chips.length === 0) return;
+    const W = 122, H = 20, gap = 8;
+    let x = p.left + Layout.PillW + 16;
+    this.lineSeg(p.left + Layout.PillW, p.y, x, p.y, rgba(p.color, 0.5), 1);
+    chips.forEach((chip, i) => {
+      const col = chip.state === 'run' ? Palette.Task : chip.state === 'ok' ? Palette.Ok : Palette.Fail;
+      const y = p.y - H / 2;
+      this.alpha(chip.alpha, () => {
+        if (chip.state === 'run') {
+          const pulse = m.reduceMotion ? 0.5 : 0.5 + 0.5 * Math.sin(this.ms / Breath);
+          this.glowRect(x, y, W, H, 6, col, 1, 5 + 5 * pulse);
+        }
+        this.fillRR(x, y, W, H, 6, rgba('#12161c'), rgba(col, chip.state === 'run' ? 0.95 : 0.7), 1.2);
+        const mark = chip.state === 'run' ? '…' : chip.state === 'ok' ? '✓' : '✕';
+        this.text(mark, x + 10, p.y, 10.5, col, { mono: true, bold: true, align: 'center' });
+        const label = chip.call.summary.length > 0 ? chip.call.summary : chip.call.tool;
+        this.text(shorten(label, 11), x + 20, p.y, 10, Palette.Text, { mono: true });
+        this.text(num1(chip.seconds) + 's', x + W - 6, p.y, 9.5, Palette.Sub, { mono: true, align: 'right' });
+      });
+      if (i < chips.length - 1) this.lineSeg(x + W, p.y, x + W + gap, p.y, rgba(col, 0.4 * chip.alpha), 1);
+      x += W + gap;
+    });
+    if (more > 0) this.text('+' + more, x, p.y, 10, Palette.Sub, { mono: true });
   }
 
   private drawHub(m: FlowModel): void {

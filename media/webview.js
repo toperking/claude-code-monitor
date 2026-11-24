@@ -120,6 +120,34 @@
     return action === "rag_index" || action === "rag_remove" || action === "rag_prune" || action === "rag_ingest_note";
   }
 
+  // src/core/tailChips.ts
+  var TailChipMax = 3;
+  var TailOkLingerMs = 5e3;
+  var TailFailLingerMs = 12e3;
+  var TailFadeMs = 1e3;
+  var NoTailChips = { chips: [], more: 0 };
+  function tailChips(recent, now, max = TailChipMax) {
+    if (now <= 0 || recent.length === 0) return NoTailChips;
+    const eligible = [];
+    for (const call of recent) {
+      if (call.result === ToolResult.Running) {
+        eligible.push({ call, state: "run", alpha: 1, seconds: Math.max(0, (now - call.time) / 1e3) });
+        continue;
+      }
+      const failed = call.result === ToolResult.Failed;
+      if (!failed && call.result !== ToolResult.Ok) continue;
+      const linger = failed ? TailFailLingerMs : TailOkLingerMs;
+      const age = Math.max(0, now - (call.time + call.durationSeconds * 1e3));
+      if (age >= linger) continue;
+      const alpha = age > linger - TailFadeMs ? (linger - age) / TailFadeMs : 1;
+      eligible.push({ call, state: failed ? "fail" : "ok", alpha, seconds: call.durationSeconds });
+    }
+    if (eligible.length === 0) return NoTailChips;
+    eligible.sort((a, b) => a.call.time - b.call.time);
+    const shown = eligible.slice(-Math.max(1, max));
+    return { chips: shown, more: eligible.length - shown.length };
+  }
+
   // src/core/model.ts
   var FlowParticle = class {
     constructor(kind, pillKey, color) {
@@ -435,7 +463,13 @@
      * 全部淡掉之後畫面是靜止的（只剩「目前沒有 AI 在執行」），不需要每秒畫幾十次。
      */
     get animating() {
-      return this.busy || this.isLive || this.source > 2e-3 || this.sink > 2e-3 || this.alienLevelValue > 2e-3 || this.particlesList.length > 0 || this.bubbles.items.length > 0 || this.ordered.some((p) => p.fade > 0.01);
+      return this.busy || this.isLive || this.source > 2e-3 || this.sink > 2e-3 || this.alienLevelValue > 2e-3 || this.particlesList.length > 0 || this.bubbles.items.length > 0 || this.ordered.some((p) => p.fade > 0.01) || this.ordered.some((p) => this.tailOf(p).chips.length > 0);
+    }
+    /** 最近一次 tick 收到的時間（毫秒時間戳）；小標籤用它判斷「剛結束」。 */
+    nowMs = 0;
+    /** 某個方塊尾巴要顯示的小標籤。展開時下方已列出呼叫，就不再重複顯示。 */
+    tailOf(p) {
+      return p.expanded ? NoTailChips : tailChips(p.recent, this.nowMs);
     }
     /** 距離「最後一次真實活動」多久（秒）。有 AI 在執行視為 0；從未有過活動為無限大。 */
     idleAge(now) {
@@ -866,6 +900,7 @@
     tick(dtRaw, now) {
       const dt = clamp(dtRaw, 0, 0.05);
       this.clock += dt;
+      this.nowMs = now;
       this.bubbles.tick(dt, (k) => BubbleAnchors.isFixed(k) || this.pills.has(k) || this.agentMap.has(k));
       const list = this.ordered;
       const gap = Layout.RowH - Layout.PillH;
@@ -1621,6 +1656,7 @@
           this.text(runLabel ? `\u2026${p.running}` : "\xD7" + p.count, x + p.w - 28, y + Layout.PillH / 2, 10, runLabel ? Palette.Warn : Palette.Sub, { mono: true, align: "right" });
           this.text(p.expanded ? "\u25BE" : "\u25B8", x + p.w - 14, y + Layout.PillH / 2, 10, hover ? Palette.Text : Palette.Dim, { mono: true, align: "center" });
           this.drawRows(p, x, y, corner);
+          this.drawTail(m, p);
           this.circle(x, p.y, 3, rgba(p.color));
           this.circle(x + p.w, p.y, 3, rgba(p.color));
         });
@@ -1655,6 +1691,33 @@
         this.text(cl.result === ToolResult.Running ? "\u2026" : num1(cl.durationSeconds) + "s", x + p.w - 12, cy, 10.5, Palette.Sub, { mono: true, align: "right" });
       });
       c.restore();
+    }
+    // 方塊尾巴的小標籤：執行中（橘、發光脈動）／剛成功（綠 ✓）／剛失敗（紅 ✕），結束一段時間後淡出
+    drawTail(m, p) {
+      const { chips, more } = m.tailOf(p);
+      if (chips.length === 0) return;
+      const W = 122, H = 20, gap = 8;
+      let x = p.left + Layout.PillW + 16;
+      this.lineSeg(p.left + Layout.PillW, p.y, x, p.y, rgba(p.color, 0.5), 1);
+      chips.forEach((chip, i) => {
+        const col = chip.state === "run" ? Palette.Task : chip.state === "ok" ? Palette.Ok : Palette.Fail;
+        const y = p.y - H / 2;
+        this.alpha(chip.alpha, () => {
+          if (chip.state === "run") {
+            const pulse = m.reduceMotion ? 0.5 : 0.5 + 0.5 * Math.sin(this.ms / Breath);
+            this.glowRect(x, y, W, H, 6, col, 1, 5 + 5 * pulse);
+          }
+          this.fillRR(x, y, W, H, 6, rgba("#12161c"), rgba(col, chip.state === "run" ? 0.95 : 0.7), 1.2);
+          const mark = chip.state === "run" ? "\u2026" : chip.state === "ok" ? "\u2713" : "\u2715";
+          this.text(mark, x + 10, p.y, 10.5, col, { mono: true, bold: true, align: "center" });
+          const label = chip.call.summary.length > 0 ? chip.call.summary : chip.call.tool;
+          this.text(shorten(label, 11), x + 20, p.y, 10, Palette.Text, { mono: true });
+          this.text(num1(chip.seconds) + "s", x + W - 6, p.y, 9.5, Palette.Sub, { mono: true, align: "right" });
+        });
+        if (i < chips.length - 1) this.lineSeg(x + W, p.y, x + W + gap, p.y, rgba(col, 0.4 * chip.alpha), 1);
+        x += W + gap;
+      });
+      if (more > 0) this.text("+" + more, x, p.y, 10, Palette.Sub, { mono: true });
     }
     drawHub(m) {
       const { x, y } = Layout.Hub;
