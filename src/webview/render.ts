@@ -661,7 +661,9 @@ export class FlowRenderer {
     for (const pt of m.particles) {
       const p = m.pillList.find(x => x.key === pt.pillKey);
       if (!p) continue;
-      const path = pt.kind === 'in' ? routeIn(p) : pt.kind === 'out' ? routeOut(p, m.outputOffsetY, p.right, m.outputOffsetX) : routeRejected(p, m.outputOffsetY, p.right, m.outputOffsetX);
+      // 光點要走在畫出來的線上：輸出線從標籤尾端出發（drawEdges），光點的路徑也要用同一個起點
+      const startX = m.tailEndX(p);
+      const path = pt.kind === 'in' ? routeIn(p) : pt.kind === 'out' ? routeOut(p, m.outputOffsetY, startX, m.outputOffsetX) : routeRejected(p, m.outputOffsetY, startX, m.outputOffsetX);
       for (let i = 8; i >= 0; i--) { // 彗星尾巴
         const q = cubic(path, Math.min(1, Math.max(0, pt.t - i * 0.03)));
         const r = 4.6 - i * 0.4;
