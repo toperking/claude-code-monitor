@@ -581,9 +581,11 @@ export class FlowRenderer {
       const tailPath = new Path2D();
       if (pill) {
         // 方塊：泡泡在右側，尾巴朝左
-        bx = pill.right + 18; by = pill.y - h / 2 + dy;
+        // 有尾巴小標籤時，泡泡讓到標籤之後，兩者都看得到
+        const edge = m.tailEndX(pill);
+        bx = edge + 18; by = pill.y - h / 2 + dy;
         if (nth === 0) { // 只有第一顆畫尾巴；往下排開的幾顆是同一個方塊的補充說明
-          tailPath.moveTo(pill.right + 5, pill.y); tailPath.lineTo(bx + 1, pill.y - tail); tailPath.lineTo(bx + 1, pill.y + tail); tailPath.closePath();
+          tailPath.moveTo(edge + 5, pill.y); tailPath.lineTo(bx + 1, pill.y - tail); tailPath.lineTo(bx + 1, pill.y + tail); tailPath.closePath();
         }
       } else if (b.anchorKey === BubbleAnchors.Rejected) {
         const cy = Layout.Rej.y + m.outputOffsetY;

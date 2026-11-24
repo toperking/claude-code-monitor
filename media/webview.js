@@ -1835,10 +1835,11 @@
         let bx, by;
         const tailPath = new Path2D();
         if (pill) {
-          bx = pill.right + 18;
+          const edge = m.tailEndX(pill);
+          bx = edge + 18;
           by = pill.y - h / 2 + dy;
           if (nth === 0) {
-            tailPath.moveTo(pill.right + 5, pill.y);
+            tailPath.moveTo(edge + 5, pill.y);
             tailPath.lineTo(bx + 1, pill.y - tail);
             tailPath.lineTo(bx + 1, pill.y + tail);
             tailPath.closePath();
