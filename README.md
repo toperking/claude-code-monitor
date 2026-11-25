@@ -13,7 +13,7 @@
 ## 隱私
 
 - 監控本身**只讀取**本機 `~/.claude/projects/**/*.jsonl` 與 `~/.codex/sessions/**/*.jsonl`（可在設定改路徑），**不連網**、不上傳。Codex 路徑預設優先採用 `CODEX_HOME`。
-- 平常**不寫入任何檔案、不執行外部程式**。唯一的例外是下面的「RAG 資料庫位置」功能：只有你**主動執行「套用 RAG 資料庫位置」命令、並在跳出的確認視窗按下同意**，才會搬移資料庫檔案，並執行 `claude mcp remove／add-json` 修改 Claude Code 的使用者設定（`~/.claude.json`）。只改設定頁的欄位不會有任何動作。
+- 平常**不寫入任何檔案、不執行外部程式**。例外是下面兩個你主動按下的功能：「安裝並啟用 local-rag」（確認後複製程式、建立 `config.json`、執行 `claude mcp add-json`、修改 `~/.codex/config.toml` 並先備份、執行 `dotnet --list-runtimes` 檢查環境）與「RAG 資料庫位置」：只有你**主動執行「套用 RAG 資料庫位置」命令、並在跳出的確認視窗按下同意**，才會搬移資料庫檔案，並執行 `claude mcp remove／add-json` 修改 Claude Code 的使用者設定（`~/.claude.json`）。只改設定頁的欄位不會有任何動作。
 - 為了這個功能，擴充功能會**唯讀**讀取 `~/.claude.json` 裡你指定名稱（預設 `local-rag`）的那一筆 MCP 註冊，其餘內容不讀取、不記錄。
 - 泡泡與日誌會顯示工具命令與檔案路徑的前幾十個字，螢幕分享時請留意。
 
@@ -58,6 +58,14 @@ Windows 桌面版同一個 Release 附 `ClaudeMonitor-win-x64-0.5.8.zip`：解�
 
 系統開啟「減少動態」時，不會產生粒子、泡泡與機器人。
 
+### 安裝並啟用 local-rag（選用，Windows）
+
+換了一台電腦、想用本機 RAG 時，不用手動複製檔案：按畫面底部的**齒輪按鈕**選「**安裝並啟用 local-rag**」（或命令 **Claude/codex Monitor: 安裝並啟用 local-rag**）。RagMcp 程式已打包在擴充功能裡。
+
+- 先顯示計畫並要你確認；同意後才複製程式到 `%LOCALAPPDATA%\LocalRag\bin\RagMcp`、建立 `config.json`（沒有才建立，可索引根目錄指到目前開的工作區），註冊到 Claude Code（`claude mcp add-json`）與 Codex（在 `~/.codex/config.toml` 附加設定，先備份；已有同名設定就不動）。
+- 資料庫位置沿用設定 `claudeMonitor.ragDbPath`；留空就用預設位置，第一次使用時建立。要帶走舊資料庫，先關掉所有開著的對話，再把 `rag.db` 複製過去。
+- 需要 .NET 8 Runtime（找不到時不做任何變更）。已開著的 Claude Code 要 `/mcp` 重新連線或開新對話，Codex 要開新工作階段。
+
 ### RAG 資料庫位置（選用）
 
 如果你用本機 RAG（MCP 伺服器，預設註冊名稱 `local-rag`），可以改變資料庫放的位置。**不用手打路徑**：按畫面底部的**齒輪按鈕**（或側邊欄標題列的齒輪、或命令 **Claude/codex Monitor: RAG 資料庫設定**），選單裡：
@@ -99,6 +107,8 @@ npm run package       # 型別檢查 + 建置 + 打包成 .vsix
 ```
 
 結構：`src/core/`（掃描器、模型、泡泡；與畫面無關）、`src/webview/`（Canvas 繪製與頁面）、`src/extension.ts`（面板與定時掃描）。
+
+0.5.15：新增「安裝並啟用 local-rag」按鈕，把打包的 RagMcp 裝到本機並註冊到 Claude Code 與 Codex。僅 VS Code 版。
 
 0.5.14：修正光點沒有走在輸出線上的問題。僅 VS Code 版。
 

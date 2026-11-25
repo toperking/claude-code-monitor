@@ -1,6 +1,7 @@
 **
 !dist/extension.js
 !media/**
+!ragmcp/**
 !resources/icon.png
 !resources/activity.svg
 !package.json

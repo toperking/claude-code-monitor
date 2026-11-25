@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.15
+- 新增「安裝並啟用 local-rag」（齒輪選單，或命令面板 **Claude/codex Monitor: 安裝並啟用 local-rag**）：RagMcp 程式（約 2 MB，含 Windows 的 SQLite 函式庫）已打包在擴充功能內，換一台電腦也能一鍵啟用，不用手動複製檔案或打指令。
+- 按下後先顯示計畫（.NET 狀態、安裝位置、config.json、資料庫位置、Claude Code 與 Codex 各會做什麼），同意才動作：複製程式到 `%LOCALAPPDATA%\LocalRag\bin\RagMcp`（內容相同就不動）、沒有 `config.json` 才建立（可索引根目錄指到目前開的工作區）、用 `claude mcp add-json` 註冊到 Claude Code（已有不同註冊會取代並保留原本的 `RAG_DB`，失敗會還原）、在 `~/.codex/config.toml` 附加 `[mcp_servers.local-rag]`（先備份為 `config.toml.claude-monitor.bak`，已有同名設定就不動）。
+- 需要 .NET 8 Runtime，找不到時不做任何變更；程式使用中（有對話開著）無法覆蓋時會說明並停止。只支援 Windows。
+- 只有 VS Code 擴充功能變動；Windows 桌面版維持 0.5.8。
+
 ## 0.5.14
 - VS Code 流程圖：修正流向成功手／失敗腳的光點沒有沿著輸出線飛的問題。輸出線自 0.5.10 起從標籤尾端出發，光點路徑卻仍從方塊右緣出發，兩者對不上；現在光點與線使用同一個起點。
 - 只有 VS Code 擴充功能變動；Windows 桌面版維持 0.5.8。

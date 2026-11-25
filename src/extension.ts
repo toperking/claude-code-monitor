@@ -5,6 +5,7 @@
 //   ① 左邊活動列的圖示 → 側邊欄裡的「本機監控」（WebviewView）
 //   ② 命令「在編輯區開啟」→ 編輯區旁邊的較大面板（WebviewPanel）
 
+import * as fsSync from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
@@ -14,6 +15,8 @@ import { MonitorSnapshot } from './core/types';
 import { executeRagDb, planRagDb } from './ragdb/apply';
 import { realRagDbDeps } from './ragdb/node';
 import { dbFileInFolder } from './ragdb/plan';
+import { executeInstall, planInstall } from './ragmcp/install';
+import { realInstallDeps } from './ragmcp/node';
 import { installRagMcpSkill } from './skill/install';
 
 function claudeHome(): string {
@@ -281,12 +284,65 @@ async function installRagSkill(log: vscode.OutputChannel): Promise<void> {
   void vscode.window.showInformationMessage(result);
 }
 
+/**
+ * 「安裝並啟用 local-rag」：把打包在擴充功能裡的 RagMcp 程式裝到 %LOCALAPPDATA%\LocalRag，
+ * 並註冊到 Claude Code（claude mcp add-json）與 Codex（~/.codex/config.toml）。先顯示計畫，使用者按同意才動作。
+ */
+async function installLocalRag(log: vscode.OutputChannel, context: vscode.ExtensionContext): Promise<void> {
+  const cfg = vscode.workspace.getConfiguration('claudeMonitor');
+  const name = (cfg.get<string>('ragServerName', 'local-rag') ?? '').trim() || 'local-rag';
+  const claude = (cfg.get<string>('ragClaudeCommand', 'claude') ?? '').trim() || 'claude';
+  const dbPath = (cfg.get<string>('ragDbPath', '') ?? '').trim();
+  const deps = realInstallDeps(vscode.Uri.joinPath(context.extensionUri, 'ragmcp').fsPath, claude);
+
+  let projectRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
+  const configExists = fsSync.existsSync(path.join(deps.localAppData, 'LocalRag', 'config.json'));
+  if (!configExists && projectRoot === '') {
+    const picked = await vscode.window.showOpenDialog({ canSelectFolders: true, canSelectFiles: false, canSelectMany: false, openLabel: '選擇這個資料夾', title: '選擇 local-rag 可以索引的專案資料夾' });
+    projectRoot = picked?.[0]?.fsPath ?? '';
+    if (projectRoot === '') { log.appendLine('[local-rag 安裝] 沒有選資料夾，取消。'); return; }
+  }
+
+  const plan = await planInstall({ name, dbPath, projectRoot }, deps);
+  const claudeText = plan.claude === 'same' ? '已註冊且內容相同，不動' : plan.claude === 'different' ? `已有不同的註冊，會取代（保留原本的資料庫位置）` : '新增註冊';
+  const codexText = plan.codex === 'no-folder' ? '找不到 ~/.codex，略過' : plan.codex === 'has-entry' ? '已有設定，不動' : '在 config.toml 附加設定（先備份）';
+  const confirm = '安裝並啟用';
+  const choice = await vscode.window.showWarningMessage(
+    `要安裝並啟用本機 RAG（${name}）嗎？`,
+    {
+      modal: true,
+      detail: [
+        `.NET：${plan.dotnetDetail}`,
+        `程式：複製到 ${plan.targetDir}`,
+        `設定：${plan.configExists ? 'config.json 已存在，不動' : `建立 config.json，可索引根目錄 project = ${plan.projectRoot}`}`,
+        `資料庫：${plan.registration.env?.RAG_DB ?? '預設位置（%LOCALAPPDATA%\\LocalRag\\rag.db，第一次使用時建立）'}`,
+        `Claude Code：${claudeText}（claude mcp add-json）`,
+        `Codex：${codexText}`,
+        '',
+        '只在你按下同意後才寫入；已開著的對話要重新連線或開新對話才會載入。',
+      ].join('\n'),
+    },
+    confirm,
+  );
+  if (choice !== confirm) { log.appendLine('[local-rag 安裝] 使用者取消。'); return; }
+
+  const result = await vscode.window.withProgress(
+    { location: vscode.ProgressLocation.Notification, title: '正在安裝並啟用 local-rag…' },
+    () => executeInstall(plan, deps),
+  );
+  for (const line of result.messages) log.appendLine(`[local-rag 安裝] ${line}`);
+  const text = result.messages.join('\n');
+  if (result.ok) void vscode.window.showInformationMessage(text);
+  else void vscode.window.showErrorMessage(text, { modal: true });
+}
+
 /** 設定按鈕（齒輪）點下去的選單。 */
-async function ragMenu(log: vscode.OutputChannel): Promise<void> {
+async function ragMenu(log: vscode.OutputChannel, context: vscode.ExtensionContext): Promise<void> {
   const cfg = vscode.workspace.getConfiguration('claudeMonitor');
   const configured = (cfg.get<string>('ragDbPath', '') ?? '').trim();
   type Item = vscode.QuickPickItem & { run: () => Thenable<unknown> | Promise<unknown> };
   const items: Item[] = [
+    { label: '$(rocket) 安裝並啟用 local-rag', detail: '把打包的 RagMcp 裝到本機，並註冊到 Claude Code 與 Codex（先顯示計畫、同意才動作）', run: () => installLocalRag(log, context) },
     { label: '$(folder) 選擇資料夾…', description: '跳出資料夾挑選器，選完自動填入路徑', run: () => pickRagDbFolder(log) },
     { label: '$(check) 套用 RAG 資料庫位置…', description: configured !== '' ? configured : '（尚未設定新位置）', detail: '先顯示計畫並要你確認，同意後才搬移資料庫並重新註冊', run: () => applyRagDb(log) },
     { label: '$(book) 產生並安裝 RAG 技能', detail: '產生 rag-MCP.md，安裝到 Claude Code 與 Codex 的技能目錄', run: () => installRagSkill(log) },
@@ -308,7 +364,8 @@ export function activate(context: vscode.ExtensionContext): void {
     hub,
     ragLog,
     vscode.commands.registerCommand('claudeMonitor.openRagSettings', () => vscode.commands.executeCommand('workbench.action.openSettings', 'claudeMonitor.rag')),
-    vscode.commands.registerCommand('claudeMonitor.ragMenu', guarded(() => ragMenu(ragLog))),
+    vscode.commands.registerCommand('claudeMonitor.ragMenu', guarded(() => ragMenu(ragLog, context))),
+    vscode.commands.registerCommand('claudeMonitor.installLocalRag', guarded(() => installLocalRag(ragLog, context))),
     vscode.commands.registerCommand('claudeMonitor.pickRagDbFolder', guarded(() => pickRagDbFolder(ragLog))),
     vscode.commands.registerCommand('claudeMonitor.applyRagDb', guarded(() => applyRagDb(ragLog))),
     vscode.commands.registerCommand('claudeMonitor.installRagMcpSkill', guarded(() => installRagSkill(ragLog))),

@@ -217,14 +217,14 @@ describe('擴充功能主機', () => {
 
   it('RAG 資料庫的命令與設定項目都有註冊，而且設定本身不會觸發任何動作', () => {
     activate(ctx() as never);
-    for (const id of ['claudeMonitor.ragMenu', 'claudeMonitor.pickRagDbFolder', 'claudeMonitor.openRagSettings', 'claudeMonitor.applyRagDb', 'claudeMonitor.installRagMcpSkill']) {
+    for (const id of ['claudeMonitor.ragMenu', 'claudeMonitor.pickRagDbFolder', 'claudeMonitor.openRagSettings', 'claudeMonitor.applyRagDb', 'claudeMonitor.installRagMcpSkill', 'claudeMonitor.installLocalRag']) {
       expect(h.commands.has(id)).toBe(true);
     }
     const pkg = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as {
       contributes: { commands: Array<{ command: string }>; configuration: { properties: Record<string, { default: unknown; markdownDescription?: string }> } };
     };
     const ids = pkg.contributes.commands.map(c => c.command);
-    expect(ids).toEqual(expect.arrayContaining(['claudeMonitor.ragMenu', 'claudeMonitor.pickRagDbFolder', 'claudeMonitor.openRagSettings', 'claudeMonitor.applyRagDb', 'claudeMonitor.installRagMcpSkill']));
+    expect(ids).toEqual(expect.arrayContaining(['claudeMonitor.ragMenu', 'claudeMonitor.pickRagDbFolder', 'claudeMonitor.openRagSettings', 'claudeMonitor.applyRagDb', 'claudeMonitor.installRagMcpSkill', 'claudeMonitor.installLocalRag']));
     expect(pkg.contributes.configuration.properties['claudeMonitor.ragDbPath'].markdownDescription).toContain('command:claudeMonitor.pickRagDbFolder'); // 設定頁裡有可點的「選擇資料夾」連結
     const props = pkg.contributes.configuration.properties;
     expect(props['claudeMonitor.ragDbPath'].default).toBe(''); // 預設空白＝不搬、不改
