@@ -108,6 +108,8 @@ npm run package       # 型別檢查 + 建置 + 打包成 .vsix
 
 結構：`src/core/`（掃描器、模型、泡泡；與畫面無關）、`src/webview/`（Canvas 繪製與頁面）、`src/extension.ts`（面板與定時掃描）。
 
+0.5.16：修正只裝 VS Code 版 Claude Code 擴充功能（PATH 上沒有 claude）時，「安裝並啟用 local-rag」註冊失敗；會改用擴充功能內建的 claude.exe。僅 VS Code 版。
+
 0.5.15：新增「安裝並啟用 local-rag」按鈕，把打包的 RagMcp 裝到本機並註冊到 Claude Code 與 Codex。僅 VS Code 版。
 
 0.5.14：修正光點沒有走在輸出線上的問題。僅 VS Code 版。

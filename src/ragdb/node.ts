@@ -3,6 +3,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { RagDbDeps } from './apply';
 import { realFs } from './mover';
+import { resolveClaudeCommand } from './claudePath';
 import { execClaude, readRegistration } from './registry';
 
 /** 真實環境的相依：~/.claude.json 唯讀讀取一筆註冊、execFile 執行 claude、預設資料庫在 %LOCALAPPDATA%\LocalRag\rag.db。 */
@@ -12,7 +13,7 @@ export function realRagDbDeps(claudeCommand: string): RagDbDeps {
   return {
     fs: realFs,
     probe: { exists: p => fs.existsSync(p), isDirectory: p => fs.existsSync(p) && fs.statSync(p).isDirectory() },
-    runner: execClaude(claudeCommand),
+    runner: execClaude(resolveClaudeCommand(claudeCommand)),
     readRegistration: name => readRegistration(claudeJson, name),
     defaultPath: path.join(local, 'LocalRag', 'rag.db'),
   };

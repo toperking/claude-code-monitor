@@ -192,7 +192,10 @@ async function registerClaude(plan: InstallPlan, deps: InstallDeps, messages: st
     }
     await deps.runner.run(['mcp', 'add-json', plan.name, asJson(plan.registration), '-s', 'user']);
     if (!sameReg(await deps.readRegistration(plan.name), plan.registration)) return await rollback('註冊後讀回的內容和預期不同。');
-  } catch (e) { return await rollback(`註冊時發生錯誤：${message(e)}`); }
+  } catch (e) {
+    const manual = `若要手動註冊，在終端機執行：claude mcp add-json ${plan.name} '${asJson(plan.registration)}' -s user`;
+    return await rollback(`註冊時發生錯誤：${message(e)}\n${manual}`);
+  }
   messages.push(`Claude Code：已註冊「${plan.name}」。已開著的對話要輸入 /mcp 重新連線，或開新對話。`);
   return true;
 }

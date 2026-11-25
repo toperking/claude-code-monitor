@@ -28,7 +28,7 @@ Codex 逐字稿是實際觀察到的本機格式，並非穩定公開 API；未�
 
 ## 安裝與發佈
 
-- VS Code：安裝 `claude-code-monitor-0.5.15.vsix`，既有視窗重新載入後生效；GitHub Release 與 Open VSX 沿用 toperking/claude-code-monitor。
+- VS Code：安裝 `claude-code-monitor-0.5.16.vsix`，既有視窗重新載入後生效；GitHub Release 與 Open VSX 沿用 toperking/claude-code-monitor。
 - Windows：解壓 `ClaudeMonitor-win-x64-0.5.8.zip`，執行 `ClaudeMonitor.Desktop.exe`，self-contained，無需另裝 .NET。先關閉舊版（含通知區圖示）再開新版；單一執行個體機制不允許同時開兩版。
 - RAG 本體、資料庫、帳號 token 與本機逐字稿不放入公開發佈包。
 - RAG 設定可一鍵產生 `rag-MCP.md`；只安裝到已存在的 Claude Code／Codex 資料夾下的 `rag-mcp` 技能目錄，略過未安裝的 AI。技能安裝不會註冊 MCP 或搬移資料庫。

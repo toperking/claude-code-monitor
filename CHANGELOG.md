@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.16
+- 修正「安裝並啟用 local-rag」在只安裝 VS Code 版 Claude Code 擴充功能（PATH 上沒有 claude）的電腦上，Claude Code 註冊失敗、顯示「找不到命令 claude」的問題：現在會依序找設定的完整路徑、PATH、`~/.local/bin`，最後找 VS Code 系編輯器（.vscode、.vscode-insiders、.vscode-oss、.cursor、.windsurf）裡最新版 Claude Code 擴充功能內建的 `claude.exe`。「套用 RAG 資料庫位置」同樣受惠。
+- 真的找不到 claude 時，錯誤訊息附上可手動執行的 `claude mcp add-json` 完整命令。
+- 已安裝過的電腦更新後再按一次按鈕即可（程式與 Codex 設定已存在會跳過，只補 Claude Code 註冊）。
+- 只有 VS Code 擴充功能變動；Windows 桌面版維持 0.5.8。
+
 ## 0.5.15
 - 新增「安裝並啟用 local-rag」（齒輪選單，或命令面板 **Claude/codex Monitor: 安裝並啟用 local-rag**）：RagMcp 程式（約 2 MB，含 Windows 的 SQLite 函式庫）已打包在擴充功能內，換一台電腦也能一鍵啟用，不用手動複製檔案或打指令。
 - 按下後先顯示計畫（.NET 狀態、安裝位置、config.json、資料庫位置、Claude Code 與 Codex 各會做什麼），同意才動作：複製程式到 `%LOCALAPPDATA%\LocalRag\bin\RagMcp`（內容相同就不動）、沒有 `config.json` 才建立（可索引根目錄指到目前開的工作區）、用 `claude mcp add-json` 註冊到 Claude Code（已有不同註冊會取代並保留原本的 `RAG_DB`，失敗會還原）、在 `~/.codex/config.toml` 附加 `[mcp_servers.local-rag]`（先備份為 `config.toml.claude-monitor.bak`，已有同名設定就不動）。
