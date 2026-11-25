@@ -2419,6 +2419,10 @@
     $("status").textContent = sources ? `\u5DF2\u8B80\u53D6\u672C\u6A5F ${sources}  \xB7  \u6D3B\u8E8D ${active} / ${s.sessions.length} \u500B session  \xB7  ${activeAgents} \u500B\u6D3B\u8E8D\u5B50\u4EE3\u7406  \xB7  ${s.recentToolCalls.length} \u7B46\u5DE5\u5177\u547C\u53EB` : "\u5C1A\u672A\u627E\u5230\u672C\u6A5F\u9010\u5B57\u7A3F\u8CC7\u6599\u593E";
   }
   var maxFps = 30;
+  function showBubblesToggle(settingEnabled) {
+    const label = document.getElementById("bubblesToggle");
+    if (label) label.style.display = settingEnabled ? "" : "none";
+  }
   window.addEventListener("message", (ev) => {
     const msg = ev.data;
     if (msg.type === "snapshot" && msg.snapshot) applySnapshot(msg.snapshot);
@@ -2429,6 +2433,7 @@
           m.bubbles.enabled = msg.bubbles;
         });
         $("bubbles").checked = msg.bubbles;
+        showBubblesToggle(msg.bubbles);
       }
       if (typeof msg.freeIdle === "boolean") {
         model.freeIdle = msg.freeIdle;

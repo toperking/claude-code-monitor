@@ -156,6 +156,7 @@ describe('擴充功能主機', () => {
     h.commands.get('claudeMonitor.open')!();
     const html = h.panels[0].html;
     expect(html).toMatch(/Content-Security-Policy[^>]*default-src 'none'/);
+    expect(html).toContain('<label id="bubblesToggle">'); // 設定 bubbles=false 時畫面端靠這個 id 把勾選框藏起來
     const nonce = /script-src 'nonce-([a-z0-9]+)'/.exec(html)![1];
     expect(html).toContain(`<script nonce="${nonce}" src="vscode-webview://x/media/webview.js">`);
     expect(html).toContain('webview.css');

@@ -44,11 +44,18 @@ function renderStatus(s: MonitorSnapshot): void {
 
 // ── 訊息 ───────────────────────────────────────────────────────────────────
 let maxFps = 30;
+
+/** 設定 claudeMonitor.bubbles = false 就是整個功能關掉：連畫面下方的「說明泡泡」勾選框一起隱藏。 */
+function showBubblesToggle(settingEnabled: boolean): void {
+  const label = document.getElementById('bubblesToggle');
+  if (label) label.style.display = settingEnabled ? '' : 'none';
+}
+
 window.addEventListener('message', ev => {
   const msg = ev.data as { type: string; snapshot?: MonitorSnapshot; bubbles?: boolean; freeIdle?: boolean; maxFps?: number };
   if (msg.type === 'snapshot' && msg.snapshot) applySnapshot(msg.snapshot);
   else if (msg.type === 'config') {
-    if (typeof msg.bubbles === 'boolean') { model.bubbles.enabled = msg.bubbles; models.forEach(m => { m.bubbles.enabled = msg.bubbles!; }); $<HTMLInputElement>('bubbles').checked = msg.bubbles; }
+    if (typeof msg.bubbles === 'boolean') { model.bubbles.enabled = msg.bubbles; models.forEach(m => { m.bubbles.enabled = msg.bubbles!; }); $<HTMLInputElement>('bubbles').checked = msg.bubbles; showBubblesToggle(msg.bubbles); }
     if (typeof msg.freeIdle === 'boolean') { model.freeIdle = msg.freeIdle; models.forEach(m => { m.freeIdle = msg.freeIdle!; }); }
     if (typeof msg.maxFps === 'number') maxFps = Math.min(60, Math.max(10, msg.maxFps));
   }

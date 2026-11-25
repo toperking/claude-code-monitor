@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.17
+- 設定 `claudeMonitor.bubbles` 為 false 時，流程圖下方的「說明泡泡」勾選框也一併隱藏（原本泡泡關了、勾選框還在）。設回 true 就會重新顯示。
+- 只有 VS Code 擴充功能變動；Windows 桌面版維持 0.5.8。
+
 ## 0.5.16
 - 修正「安裝並啟用 local-rag」在只安裝 VS Code 版 Claude Code 擴充功能（PATH 上沒有 claude）的電腦上，Claude Code 註冊失敗、顯示「找不到命令 claude」的問題：現在會依序找設定的完整路徑、PATH、`~/.local/bin`，最後找 VS Code 系編輯器（.vscode、.vscode-insiders、.vscode-oss、.cursor、.windsurf）裡最新版 Claude Code 擴充功能內建的 `claude.exe`。「套用 RAG 資料庫位置」同樣受惠。
 - 真的找不到 claude 時，錯誤訊息附上可手動執行的 `claude mcp add-json` 完整命令。
