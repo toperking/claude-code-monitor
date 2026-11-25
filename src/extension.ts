@@ -31,6 +31,23 @@ function codexHome(): string {
 
 interface Target { webview: vscode.Webview; visible: () => boolean }
 
+/**
+ * 面板上「說明泡泡」勾選框的變更寫回設定 claudeMonitor.bubbles，重新載入視窗後仍維持。
+ * 工作區設定已經覆蓋它時寫到工作區，否則寫到使用者設定。關閉後勾選框會隱藏（設定為 false 的畫面行為），
+ * 所以關閉時提示一次並提供「還原」。
+ */
+async function setBubblesSetting(enabled: boolean): Promise<void> {
+  const cfg = vscode.workspace.getConfiguration('claudeMonitor');
+  if (cfg.get<boolean>('bubbles', true) === enabled) return;
+  const inWorkspace = cfg.inspect?.('bubbles')?.workspaceValue !== undefined;
+  const target = inWorkspace ? vscode.ConfigurationTarget.Workspace : vscode.ConfigurationTarget.Global;
+  await cfg.update('bubbles', enabled, target);
+  if (enabled) return;
+  const restore = '還原';
+  const choice = await vscode.window.showInformationMessage('已永久關閉說明泡泡（設定 claudeMonitor.bubbles = false）。', restore);
+  if (choice === restore) await vscode.workspace.getConfiguration('claudeMonitor').update('bubbles', true, target);
+}
+
 /** 掃描器與計時器的唯一擁有者；所有畫面（側邊欄、編輯區面板）都向它登記。 */
 export class MonitorHub implements vscode.Disposable {
   private scanner: TranscriptScanner;
@@ -61,8 +78,9 @@ export class MonitorHub implements vscode.Disposable {
   attach(webview: vscode.Webview, visible: () => boolean): vscode.Disposable {
     const target: Target = { webview, visible };
     this.targets.add(target);
-    const sub = webview.onDidReceiveMessage((m: { type?: string }) => {
+    const sub = webview.onDidReceiveMessage((m: { type?: string; enabled?: unknown }) => {
       if (m.type === 'openSettings') { void vscode.commands.executeCommand('claudeMonitor.ragMenu'); return; }
+      if (m.type === 'setBubbles' && typeof m.enabled === 'boolean') { void setBubblesSetting(m.enabled); return; }
       if (m.type !== 'ready') return;
       this.sendConfig(target);
       if (this.last) void webview.postMessage({ type: 'snapshot', snapshot: this.last }); // 先給最近一份，不用等下一輪掃描

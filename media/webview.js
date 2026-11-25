@@ -2490,6 +2490,7 @@
     models.forEach((m) => {
       m.bubbles.enabled = e.target.checked;
     });
+    vscode?.postMessage({ type: "setBubbles", enabled: e.target.checked });
   });
   var MaxDpr = 1.5;
   var resize = () => {

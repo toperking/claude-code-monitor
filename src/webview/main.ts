@@ -111,6 +111,7 @@ document.getElementById('settings')?.addEventListener('click', () => vscode?.pos
 $<HTMLInputElement>('bubbles').addEventListener('change', e => {
   model.bubbles.enabled = (e.target as HTMLInputElement).checked;
   models.forEach(m => { m.bubbles.enabled = (e.target as HTMLInputElement).checked; });
+  vscode?.postMessage({ type: 'setBubbles', enabled: (e.target as HTMLInputElement).checked }); // 寫回設定，重新載入後仍維持（測試用 harness 頁沒有 vscode）
 });
 
 // ── 大小與動畫迴圈 ─────────────────────────────────────────────────────────

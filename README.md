@@ -108,6 +108,8 @@ npm run package       # 型別檢查 + 建置 + 打包成 .vsix
 
 結構：`src/core/`（掃描器、模型、泡泡；與畫面無關）、`src/webview/`（Canvas 繪製與頁面）、`src/extension.ts`（面板與定時掃描）。
 
+0.5.18：面板的「說明泡泡」勾選框會寫回設定 claudeMonitor.bubbles（取消＝永久關閉，提示裡可還原）。僅 VS Code 版。
+
 0.5.17：設定 claudeMonitor.bubbles 為 false 時，畫面下方的「說明泡泡」勾選框一併隱藏。僅 VS Code 版。
 
 0.5.16：修正只裝 VS Code 版 Claude Code 擴充功能（PATH 上沒有 claude）時，「安裝並啟用 local-rag」註冊失敗；會改用擴充功能內建的 claude.exe。僅 VS Code 版。

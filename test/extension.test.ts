@@ -32,7 +32,7 @@ const h = vi.hoisted(() => {
 vi.mock('vscode', () => ({
   ViewColumn: { Beside: -2 },
   StatusBarAlignment: { Right: 2 },
-  ConfigurationTarget: { Global: 1 },
+  ConfigurationTarget: { Global: 1, Workspace: 2 },
   Uri: {
     joinPath: (_base: unknown, ...parts: string[]) => ({ toString: () => 'vscode-webview://x/' + parts.join('/') }),
     file: (p: string) => ({ fsPath: p }),
@@ -214,6 +214,28 @@ describe('擴充功能主機', () => {
     await (h.commands.get('claudeMonitor.pickRagDbFolder')!() as unknown as Promise<void>);
     expect(h.updates).toEqual([]);
     expect(h.infos).toEqual([]);
+  });
+
+  it('面板上的「說明泡泡」勾選框：取消勾選寫回設定 bubbles=false 並提示可還原，重勾寫回 true', async () => {
+    activate(ctx() as never);
+    h.commands.get('claudeMonitor.open')!();
+    h.panels[0].receive({ type: 'setBubbles', enabled: false }); await flush();
+    expect(h.updates).toEqual([['bubbles', false]]);
+    expect(h.infos[0]).toContain('永久關閉');
+    h.panels[0].receive({ type: 'setBubbles', enabled: true }); await flush();
+    expect(h.updates).toEqual([['bubbles', false], ['bubbles', true]]);
+  });
+
+  it('說明泡泡：按提示裡的「還原」會把設定改回 true；設定已經是同樣的值就什麼都不寫；亂傳的值忽略', async () => {
+    activate(ctx() as never);
+    h.commands.get('claudeMonitor.open')!();
+    h.infoChoice = '還原';
+    h.panels[0].receive({ type: 'setBubbles', enabled: false }); await flush();
+    expect(h.updates).toEqual([['bubbles', false], ['bubbles', true]]);
+    h.updates.length = 0; h.infoChoice = undefined;
+    h.panels[0].receive({ type: 'setBubbles', enabled: true }); await flush(); // 已經是 true
+    h.panels[0].receive({ type: 'setBubbles', enabled: 'no' }); await flush();
+    expect(h.updates).toEqual([]);
   });
 
   it('RAG 資料庫的命令與設定項目都有註冊，而且設定本身不會觸發任何動作', () => {
